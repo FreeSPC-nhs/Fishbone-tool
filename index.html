@@ -24,7 +24,10 @@
       --arrow-width:240px;
       --label-width:200px;
       --rib-length:150px;
-      --block-width:260px;
+      --block-width:280px;
+
+      /* how far the outer ends of category bones shift left to force diagonal slant */
+      --bone-slant:220px;
     }
 
     body{
@@ -160,14 +163,20 @@
       color:#111;
     }
 
-    /* Blocks: positioned; x computed to sit near the diagonal bone */
+    /* Blocks */
     .block{
       position:absolute;
       width: var(--block-width);
       max-width: 92%;
+      padding:2px 4px;
+      border-radius:8px;
+    }
+    .block.is-selected{
+      background: rgba(0,94,184,0.08);
+      outline: 2px solid rgba(0,94,184,0.30);
+      outline-offset: 2px;
     }
 
-    /* Title is editable; handle is draggable */
     .blockTitle{
       font-weight:800;
       margin:0 0 3px 0;
@@ -202,7 +211,7 @@
 
     .bullets{
       margin:0;
-      padding-left:34px; /* align under title text (handle + gap) */
+      padding-left:34px;
     }
     .bullets li{
       margin:2px 0;
@@ -294,29 +303,6 @@
       user-select:text;
     }
 
-    /* On-canvas add category buttons */
-    .addCategoryBtn{
-      position:absolute;
-      width:26px;
-      height:26px;
-      border-radius:999px;
-      background:#fff;
-      border:2px solid var(--bone);
-      color:var(--bone);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-weight:900;
-      cursor:pointer;
-      user-select:none;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
-      pointer-events:auto;
-      z-index:4;
-    }
-    .addCategoryBtn:hover{ background:#fff6f6; }
-    #addTopBtn{ left:18px; top:18px; }
-    #addBottomBtn{ left:18px; bottom:18px; }
-
     /* Side panel */
     .panelHandle{
       position:absolute;
@@ -337,7 +323,7 @@
       top:0;
       right:0;
       height:100%;
-      width:330px;
+      width:340px;
       background:#fff;
       border-left:1px solid #ddd;
       box-shadow:-2px 0 10px rgba(0,0,0,0.10);
@@ -384,14 +370,50 @@
     .field input[type="range"]{ width:100%; }
     .field input[type="color"]{ width:48px; height:28px; padding:0; border:1px solid #ddd; border-radius:6px; }
 
+    /* Help modal */
+    .modalOverlay{
+      position:fixed;
+      inset:0;
+      background: rgba(0,0,0,0.35);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:1000;
+      padding:20px;
+      box-sizing:border-box;
+    }
+    .modalOverlay.open{ display:flex; }
+    .modal{
+      width:min(860px, 96vw);
+      max-height: 86vh;
+      overflow:auto;
+      background:#fff;
+      border-radius:12px;
+      box-shadow:0 10px 35px rgba(0,0,0,0.25);
+      padding:16px 18px;
+      position:relative;
+    }
+    .modal h2{ margin:0 0 8px 0; font-size:1.1rem; }
+    .modal h3{ margin:14px 0 6px 0; font-size:1rem; }
+    .modal p, .modal li{ font-size:0.92rem; line-height:1.4; color:#222; }
+    .modalClose{
+      position:absolute;
+      top:10px;
+      right:10px;
+      border:1px solid #ddd;
+      background:#fff;
+      border-radius:10px;
+      padding:6px 10px;
+      cursor:pointer;
+    }
+
     /* Export-clean mode */
     .export-clean .regionControls,
     .export-clean .del,
-    .export-clean .addCategoryBtn,
-    .export-clean .panelHandle,
-    .export-clean #sidePanel,
     .export-clean .dragHandle,
-    .export-clean #effectDrag{
+    .export-clean #effectDrag,
+    .export-clean .panelHandle,
+    .export-clean #sidePanel{
       display:none !important;
     }
 
@@ -408,12 +430,13 @@
   <div>
     <h1>Fishbone Diagram Tool</h1>
     <p>
-      Click any label/heading/bullet to edit. Use the small handle (⠿) to drag a heading up/down along its category bone.
-      The arrow text can also be moved using the small drag dot.
+      Click text to edit. Click a heading to select it (highlight). Use ⠿ to drag the heading up/down along the diagonal bone.
+      “+ Bullet” adds to the selected heading in that category.
     </p>
   </div>
 
   <div class="toolbar">
+    <button id="btnHelp" type="button">Help</button>
     <button id="btnExportJSON" type="button">Export JSON</button>
     <label>Import JSON
       <input id="fileImportJSON" type="file" accept=".json" />
@@ -426,11 +449,7 @@
 
 <div class="card">
   <div id="diagramWrapper">
-
     <svg id="bonesSvg" viewBox="0 0 1200 720" preserveAspectRatio="none"></svg>
-
-    <div id="addTopBtn" class="addCategoryBtn" title="Add a top category">+</div>
-    <div id="addBottomBtn" class="addCategoryBtn" title="Add a bottom category">+</div>
 
     <button id="openPanel" class="panelHandle" type="button" title="Open settings">⚙ Settings</button>
 
@@ -475,18 +494,12 @@
 
         <div class="field">
           <label for="blockWidth">Heading block width</label>
-          <input type="range" id="blockWidth" min="180" max="420" value="260">
+          <input type="range" id="blockWidth" min="180" max="520" value="280">
         </div>
-      </div>
 
-      <div class="sideGroup">
-        <h3>Tips</h3>
-        <div style="font-size:0.85rem; color:#444; line-height:1.35;">
-          <ul style="margin:0; padding-left:18px;">
-            <li>Drag using the ⠿ handle (not the text) to avoid editing conflicts.</li>
-            <li>Heading ribs stay attached to the diagonal bone as you move them.</li>
-            <li>Drag the small dot on the arrow text to reposition it.</li>
-          </ul>
+        <div class="field">
+          <label for="boneSlant">Category bone slant</label>
+          <input type="range" id="boneSlant" min="120" max="360" value="220">
         </div>
       </div>
     </div>
@@ -501,11 +514,54 @@
       <div id="effectDrag" title="Drag arrow text">↕</div>
       <div id="effectText" contenteditable="true" spellcheck="false"></div>
     </div>
-
   </div>
 
   <div class="note">
-    Tip: Use the ⠿ grab handle to move headings. They move along the diagonal bone and the rib follows.
+    Tip: Click a heading block to select it. Then use “+ Bullet” in that category to add to the selected heading.
+  </div>
+</div>
+
+<!-- Help modal -->
+<div id="helpOverlay" class="modalOverlay" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Help">
+    <button id="helpClose" class="modalClose" type="button">Close</button>
+    <h2>How to use the Fishbone Diagram Tool</h2>
+
+    <h3>Edit text</h3>
+    <ul>
+      <li>Click any category label, heading, or bullet point to edit.</li>
+      <li>Click outside the text when finished.</li>
+    </ul>
+
+    <h3>Select a heading</h3>
+    <ul>
+      <li>Click a heading block to select it (it highlights).</li>
+      <li>“+ Bullet” in that category adds a bullet to the selected heading.</li>
+      <li>If nothing is selected, “+ Bullet” adds to the last heading in that category.</li>
+    </ul>
+
+    <h3>Move headings</h3>
+    <ul>
+      <li>Use the ⠿ grab handle to drag a heading up/down.</li>
+      <li>The rib stays attached to the diagonal category bone as you move.</li>
+    </ul>
+
+    <h3>Problem / effect box</h3>
+    <ul>
+      <li>Edit the text in the arrow by clicking it.</li>
+      <li>Move the text using the small ↕ handle.</li>
+    </ul>
+
+    <h3>Save, reload and export</h3>
+    <ul>
+      <li><strong>Export JSON</strong> to save your work and reload later with <strong>Import JSON</strong>.</li>
+      <li><strong>Export PNG/PDF</strong> to capture the diagram for reports and slides.</li>
+    </ul>
+
+    <h3>Settings</h3>
+    <ul>
+      <li>Use <strong>Settings</strong> to adjust colours, font size, and bone/rib formatting.</li>
+    </ul>
   </div>
 </div>
 

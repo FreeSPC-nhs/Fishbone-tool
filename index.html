@@ -23,6 +23,8 @@
       --bone-thickness:10;
       --arrow-width:240px;
       --label-width:200px;
+      --rib-length:150px;
+      --block-width:260px;
     }
 
     body{
@@ -45,16 +47,12 @@
       flex-wrap:wrap;
       margin-bottom:14px;
     }
-    header h1{
-      margin:0;
-      font-size:1.25rem;
-      line-height:1.2;
-    }
+    header h1{ margin:0; font-size:1.25rem; line-height:1.2; }
     header p{
       margin:6px 0 0 0;
       color:#e7f0ff;
       font-size:0.88rem;
-      max-width:900px;
+      max-width:980px;
     }
 
     .toolbar{
@@ -85,7 +83,6 @@
       padding:12px;
     }
 
-    /* Diagram wrapper */
     #diagramWrapper{
       position:relative;
       border:1px solid #e2e2e2;
@@ -163,27 +160,49 @@
       color:#111;
     }
 
-    /* Blocks are free-positioned (drag moves them) */
+    /* Blocks: positioned; x computed to sit near the diagonal bone */
     .block{
       position:absolute;
-      left:0;
-      right:0;
-      min-height:34px;
+      width: var(--block-width);
+      max-width: 92%;
     }
 
+    /* Title is editable; handle is draggable */
     .blockTitle{
       font-weight:800;
-      margin-bottom:3px;
-      cursor:grab;
+      margin:0 0 3px 0;
+      display:flex;
+      align-items:center;
+      gap:8px;
       user-select:text;
-      display:inline-block;
-      max-width: 95%;
     }
-    .blockTitle:active{ cursor:grabbing; }
+
+    .dragHandle{
+      flex:0 0 auto;
+      width:18px;
+      height:18px;
+      border-radius:4px;
+      border:1px solid #ddd;
+      background:#fff;
+      color:#444;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:12px;
+      cursor:grab;
+      user-select:none;
+    }
+    .dragHandle:active{ cursor:grabbing; }
+
+    .titleText{
+      flex:1;
+      min-width: 30px;
+      cursor:text;
+    }
 
     .bullets{
       margin:0;
-      padding-left:16px;
+      padding-left:34px; /* align under title text (handle + gap) */
     }
     .bullets li{
       margin:2px 0;
@@ -236,22 +255,43 @@
     }
     .block:hover .del, .bullets li:hover .del{ opacity:0.95; }
 
-    /* Effect arrow text overlay */
-    #effectText{
+    /* Effect arrow text overlay + drag handle */
+    #effectBox{
       position:absolute;
-      right:22px;
       top:50%;
-      transform:translateY(-50%);
+      left: calc(100% - var(--arrow-width) + 22px);
+      transform: translateY(-50%);
       width: calc(var(--arrow-width) - 50px);
+      z-index:3;
+      pointer-events:auto;
+    }
+    #effectDrag{
+      position:absolute;
+      top:-8px;
+      left:-8px;
+      width:20px;
+      height:20px;
+      border-radius:999px;
+      background:#fff;
+      border:2px solid rgba(255,255,255,0.8);
+      box-shadow:0 1px 3px rgba(0,0,0,0.12);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:12px;
+      cursor:grab;
+      user-select:none;
+    }
+    #effectDrag:active{ cursor:grabbing; }
+
+    #effectText{
       color:#fff;
       font-weight:700;
       font-size: var(--diagram-font);
       line-height:1.25;
-      text-align:left;
-      pointer-events:auto;
       padding:12px 14px;
       box-sizing:border-box;
-      z-index:3;
+      user-select:text;
     }
 
     /* On-canvas add category buttons */
@@ -297,7 +337,7 @@
       top:0;
       right:0;
       height:100%;
-      width:320px;
+      width:330px;
       background:#fff;
       border-left:1px solid #ddd;
       box-shadow:-2px 0 10px rgba(0,0,0,0.10);
@@ -349,7 +389,9 @@
     .export-clean .del,
     .export-clean .addCategoryBtn,
     .export-clean .panelHandle,
-    .export-clean #sidePanel{
+    .export-clean #sidePanel,
+    .export-clean .dragHandle,
+    .export-clean #effectDrag{
       display:none !important;
     }
 
@@ -366,9 +408,8 @@
   <div>
     <h1>Fishbone Diagram Tool</h1>
     <p>
-      Click any label, heading or bullet to edit directly on the diagram.
-      Drag headings (grab the bold heading text) to reposition.
-      Hover in a section to add headings/bullets. Use JSON to save/reload; export PNG/PDF for reports.
+      Click any label/heading/bullet to edit. Use the small handle (⠿) to drag a heading up/down along its category bone.
+      The arrow text can also be moved using the small drag dot.
     </p>
   </div>
 
@@ -409,7 +450,7 @@
 
         <div class="field">
           <label for="boneThickness">Bone thickness</label>
-          <input type="range" id="boneThickness" min="4" max="16" value="10">
+          <input type="range" id="boneThickness" min="4" max="18" value="10">
         </div>
 
         <div class="field">
@@ -419,12 +460,22 @@
 
         <div class="field">
           <label for="arrowWidth">Arrow width</label>
-          <input type="range" id="arrowWidth" min="180" max="320" value="240">
+          <input type="range" id="arrowWidth" min="180" max="360" value="240">
         </div>
 
         <div class="field">
           <label for="labelWidth">Category label width</label>
-          <input type="range" id="labelWidth" min="160" max="320" value="200">
+          <input type="range" id="labelWidth" min="160" max="340" value="200">
+        </div>
+
+        <div class="field">
+          <label for="ribLength">Heading rib length</label>
+          <input type="range" id="ribLength" min="90" max="260" value="150">
+        </div>
+
+        <div class="field">
+          <label for="blockWidth">Heading block width</label>
+          <input type="range" id="blockWidth" min="180" max="420" value="260">
         </div>
       </div>
 
@@ -432,10 +483,9 @@
         <h3>Tips</h3>
         <div style="font-size:0.85rem; color:#444; line-height:1.35;">
           <ul style="margin:0; padding-left:18px;">
-            <li>Hover a category to add headings/bullets or remove it.</li>
-            <li>Drag headings to avoid overlaps and improve readability.</li>
-            <li>Horizontal sub-bones are automatically drawn for each heading.</li>
-            <li>Exports hide UI controls automatically.</li>
+            <li>Drag using the ⠿ handle (not the text) to avoid editing conflicts.</li>
+            <li>Heading ribs stay attached to the diagonal bone as you move them.</li>
+            <li>Drag the small dot on the arrow text to reposition it.</li>
           </ul>
         </div>
       </div>
@@ -447,11 +497,15 @@
       <div class="rowBottom" id="rowBottom"></div>
     </div>
 
-    <div id="effectText" contenteditable="true" spellcheck="false"></div>
+    <div id="effectBox">
+      <div id="effectDrag" title="Drag arrow text">↕</div>
+      <div id="effectText" contenteditable="true" spellcheck="false"></div>
+    </div>
+
   </div>
 
   <div class="note">
-    Tip: Drag the bold heading text to reposition. Hover over a category to reveal controls. Click text to edit.
+    Tip: Use the ⠿ grab handle to move headings. They move along the diagonal bone and the rib follows.
   </div>
 </div>
 

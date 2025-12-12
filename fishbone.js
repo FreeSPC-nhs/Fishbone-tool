@@ -1,10 +1,12 @@
-/* fishbone.js (v4)
-   Requested changes:
-   - Headings/blocks appear LEFT of category bones
-   - Category bones are always diagonal (classic fishbone slant)
-   - Removed "add category" feature (fixed 3 top + 3 bottom in default model)
-   - "+ Bullet" adds to the SELECTED heading in that category
-   - Help modal added (wired here)
+/* fishbone.js (v5)
+   Fixes:
+   - Headings AND ribs are on the LEFT of category bones (no “floating right”)
+   - Category labels are attached to the diagonal bones (positioned by JS)
+   - Smaller default arrow width + default text "Add your problem here"
+   - Left-side bones start further right (better padding)
+   - Arrow textbox is resizable and size is saved in JSON via ResizeObserver
+   - Always 6 categories (classic defaults), categories cannot be deleted
+   - +Bullet goes to selected heading in that category
 */
 
 (function () {
@@ -12,34 +14,39 @@
 
   // ---------- Model ----------
   let model = defaultModel();
-
-  // Which heading block is currently selected (for +Bullet)
   let selectedBlockId = null;
 
   function defaultModel() {
     return {
-      version: 4,
-      effectText: ">40% A&E attendances for HIO (>20 attendances) are for avoidable reasons which can be supported in the community",
+      version: 5,
+      effectText: "Add your problem here",
       effectPos: { dx: 0, dy: 0 },
+      effectSize: { w: 180, h: 110 }, // resizable box default (px)
       appearance: {
         boneColor: "#c00000",
         boneThickness: 10,
         fontSize: 12,
-        arrowWidth: 240,
+
+        // smaller default arrow size
+        arrowWidth: 180,
+
         labelWidth: 200,
         ribLength: 150,
         blockWidth: 280,
-        boneSlant: 220
+
+        // diagonal slant
+        boneSlant: 200
       },
+      // Classic 6 headings
       topCategories: [
-        makeCategory("Relationships & Culture", 0),
-        makeCategory("Communication & Coordination", 70),
-        makeCategory("Processes & Procedures", 0)
+        makeCategory("People", 0),
+        makeCategory("Methods", 70),
+        makeCategory("Machines", 0)
       ],
       bottomCategories: [
-        makeCategory("Resources & Infrastructure", 0),
-        makeCategory("Methods & Ways of Working", 70),
-        makeCategory("Environment & External Factors", 0)
+        makeCategory("Materials", 0),
+        makeCategory("Measurement", 70),
+        makeCategory("Environment", 0)
       ]
     };
   }
@@ -71,12 +78,15 @@
   let gStatic = null;
   let gRibs = null;
 
-  // Cached category bone definitions: catId -> { xSpine, ySpine, xEdge, yEdge }
+  // Cached category bones catId -> { xSpine, ySpine, xEdge, yEdge, side }
   const catBones = new Map();
 
   // Drag states
   let headingDrag = null;
   let effectDragState = null;
+
+  // Resize observer for effect textbox
+  let effectResizeObs = null;
 
   // ---------- Appearance ----------
   function applyAppearance() {
@@ -84,16 +94,23 @@
     document.documentElement.style.setProperty("--bone", a.boneColor || "#c00000");
     document.documentElement.style.setProperty("--bone-thickness", String(a.boneThickness ?? 10));
     document.documentElement.style.setProperty("--diagram-font", (a.fontSize ?? 12) + "px");
-    document.documentElement.style.setProperty("--arrow-width", (a.arrowWidth ?? 240) + "px");
+    document.documentElement.style.setProperty("--arrow-width", (a.arrowWidth ?? 180) + "px");
     document.documentElement.style.setProperty("--label-width", (a.labelWidth ?? 200) + "px");
     document.documentElement.style.setProperty("--rib-length", (a.ribLength ?? 150) + "px");
     document.documentElement.style.setProperty("--block-width", (a.blockWidth ?? 280) + "px");
-    document.documentElement.style.setProperty("--bone-slant", (a.boneSlant ?? 220) + "px");
+    document.documentElement.style.setProperty("--bone-slant", (a.boneSlant ?? 200) + "px");
 
+    // effect position
     const dx = model.effectPos?.dx ?? 0;
     const dy = model.effectPos?.dy ?? 0;
     effectBox.style.marginLeft = dx + "px";
     effectBox.style.marginTop = dy + "px";
+
+    // effect size (resizable)
+    const w = clamp(Number(model.effectSize?.w ?? 180), 120, 600);
+    const h = clamp(Number(model.effectSize?.h ?? 110), 70, 500);
+    effectTextEl.style.width = w + "px";
+    effectTextEl.style.height = h + "px";
   }
 
   // ---------- Render ----------
@@ -106,8 +123,9 @@
 
     requestAnimationFrame(() => {
       drawStaticBones();   // builds catBones
-      positionAllBlocks(); // blocks track the diagonal bone, left side
-      drawHeadingRibs();   // ribs attach to diagonal and extend LEFT
+      positionAllBlocks(); // blocks sit LEFT of diagonal at each y
+      drawHeadingRibs();   // ribs extend LEFT from diagonal
+      attachCategoryLabels();
       refreshSelectionUI();
     });
   }
@@ -122,8 +140,11 @@
       region.dataset.side = side;
       region.dataset.catId = cat.id;
 
+      // Category label (position set later by attachCategoryLabels)
       const label = document.createElement("div");
-      label.className = `catLabel ${side}`;
+      label.className = "catLabel";
+      label.dataset.catId = cat.id;
+      label.dataset.side = side;
       label.contentEditable = "true";
       label.spellcheck = false;
       label.textContent = cat.label || "";
@@ -144,15 +165,7 @@
         renderAll();
       }));
 
-      controls.appendChild(mkBtn("Remove", () => {
-        const ok = window.confirm(`Remove category “${cat.label}”?`);
-        if (!ok) return;
-        if (side === "top") model.topCategories = model.topCategories.filter(c => c.id !== cat.id);
-        else model.bottomCategories = model.bottomCategories.filter(c => c.id !== cat.id);
-        // also clear selection if it was in this category
-        if (selectedBlockId && !findBlockById(selectedBlockId)) selectedBlockId = null;
-        renderAll();
-      }, true));
+      // NOTE: no category removal (locked to 6 categories)
 
       const content = document.createElement("div");
       content.className = "content";
@@ -167,10 +180,8 @@
         blockEl.dataset.side = side;
         blockEl.style.top = clamp(block.yOffset, -10, 10000) + "px";
 
-        // Clicking a block selects it
         blockEl.addEventListener("mousedown", (e) => {
-          // don't override selection while dragging the handle
-          if (e.target && e.target.classList && e.target.classList.contains("dragHandle")) return;
+          if (e.target?.classList?.contains("dragHandle")) return;
           selectedBlockId = block.id;
           refreshSelectionUI();
         });
@@ -185,7 +196,7 @@
         handle.addEventListener("mousedown", (e) => {
           e.preventDefault();
           e.stopPropagation();
-          selectedBlockId = block.id; // selecting when starting drag feels natural
+          selectedBlockId = block.id;
           refreshSelectionUI();
           startHeadingDrag(block, blockEl, content, cat.id, side, e.clientY);
         });
@@ -256,10 +267,10 @@
     });
   }
 
-  function mkBtn(text, onClick, danger=false) {
+  function mkBtn(text, onClick) {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = danger ? "chipBtn danger" : "chipBtn";
+    b.className = "chipBtn";
     b.textContent = text;
     b.addEventListener("click", (e) => { e.stopPropagation(); onClick(); });
     return b;
@@ -272,30 +283,17 @@
   }
 
   function addBulletToSelectedInCategory(cat) {
-    // If selected block belongs to this category, add there; else add to last block in category
     let target = null;
-
     if (selectedBlockId) {
       const found = cat.blocks.find(b => b.id === selectedBlockId);
       if (found) target = found;
     }
-
     if (!target) {
-      if (!cat.blocks.length) cat.blocks.push({ id: uid(), title: "Heading", bullets: [], yOffset: 0 });
       target = cat.blocks[cat.blocks.length - 1];
-      selectedBlockId = target.id; // convenience: selection follows action
+      selectedBlockId = target.id;
     }
-
     if (!Array.isArray(target.bullets)) target.bullets = [];
     target.bullets.push("New bullet…");
-  }
-
-  function findBlockById(blockId) {
-    for (const c of [...model.topCategories, ...model.bottomCategories]) {
-      const b = c.blocks.find(x => x.id === blockId);
-      if (b) return b;
-    }
-    return null;
   }
 
   function refreshSelectionUI() {
@@ -303,7 +301,7 @@
     blocks.forEach(b => b.classList.toggle("is-selected", b.dataset.blockId === selectedBlockId));
   }
 
-  // ---------- Dragging headings (vertical only; X follows diagonal bone) ----------
+  // ---------- Dragging headings ----------
   function startHeadingDrag(block, blockEl, contentEl, catId, side, startClientY) {
     headingDrag = { block, blockEl, contentEl, catId, side, startY: startClientY, startOffset: block.yOffset || 0 };
     document.addEventListener("mousemove", onHeadingDragMove);
@@ -362,6 +360,21 @@
     model.effectText = effectTextEl.textContent.trim();
   });
 
+  // Track resizing of the effect textbox and persist to model
+  function setupEffectResizeObserver() {
+    if (!("ResizeObserver" in window)) return;
+    if (effectResizeObs) effectResizeObs.disconnect();
+    effectResizeObs = new ResizeObserver(() => {
+      const r = effectTextEl.getBoundingClientRect();
+      // Store as px values; clamp for sanity
+      model.effectSize = {
+        w: clamp(Math.round(r.width), 120, 800),
+        h: clamp(Math.round(r.height), 70, 700)
+      };
+    });
+    effectResizeObs.observe(effectTextEl);
+  }
+
   // ---------- Bones drawing ----------
   function ensureGroups() {
     if (!gStatic) {
@@ -386,10 +399,12 @@
     const a = model.appearance || {};
     const stroke = a.boneColor || "#c00000";
     const thickness = Number(a.boneThickness ?? 10);
-    const arrowW = Number(a.arrowWidth ?? 240);
-    const slant = Number(a.boneSlant ?? 220);
+    const arrowW = Number(a.arrowWidth ?? 180);
+    const slant = Number(a.boneSlant ?? 200);
 
-    const marginL = 60;
+    // More left padding so left bones don't start at the edge
+    const marginL = 140;
+
     const arrowX = W - arrowW;
     const spineStart = marginL;
     const spineEnd = arrowX - 24;
@@ -397,7 +412,7 @@
     // Spine
     addLine(gStatic, spineStart, midY, spineEnd, midY, stroke, thickness);
 
-    // Arrow
+    // Arrow (same shape, smaller width)
     const arrowTop = midY - 95;
     const arrowBot = midY + 95;
     const arrowTipX = W - 18;
@@ -413,8 +428,9 @@
     // Left tail
     addLine(gStatic, spineStart - 40, midY, spineStart, midY, stroke, Math.max(4, thickness - 4));
 
-    // One diagonal bone per category:
-    // xSpine = region center; xEdge is shifted LEFT by slant to force diagonal.
+    // One diagonal bone per category.
+    // xSpine is based on region center but clamped away from the left edge.
+    // xEdge is shifted LEFT to ensure diagonal slant, but not allowed too close to edge.
     const wrapRect = wrapper.getBoundingClientRect();
     drawCategoryBones(model.topCategories, "top");
     drawCategoryBones(model.bottomCategories, "bottom");
@@ -422,7 +438,7 @@
     function drawCategoryBones(categories, side) {
       const row = side === "top" ? rowTop : rowBottom;
       const regions = Array.from(row.querySelectorAll(".region"));
-      const yEdge = side === "top" ? 40 : (H - 40);
+      const yEdge = side === "top" ? 55 : (H - 55);
 
       categories.forEach((cat) => {
         const regionEl = regions.find(r => r.dataset.catId === cat.id);
@@ -431,12 +447,15 @@
         const rr = regionEl.getBoundingClientRect();
         const centerPx = (rr.left + rr.right) / 2 - wrapRect.left;
 
-        // map to svg x for spine anchor
-        const xSpine = clamp(pxToSvgX(centerPx, wrapRect.width, W), spineStart + 50, spineEnd - 50);
+        // svg x for spine anchor
+        let xSpine = pxToSvgX(centerPx, wrapRect.width, W);
 
-        // force diagonal: edge is slanted LEFT from spine anchor
+        // push away from left edge; keep well inside spine band
+        xSpine = clamp(xSpine, spineStart + 120, spineEnd - 80);
+
+        // diagonal: outer end shifted left, but keep a healthy margin
         let xEdge = xSpine - slant;
-        xEdge = clamp(xEdge, 20, W - 20);
+        xEdge = clamp(xEdge, 90, W - 40);
 
         addLine(gStatic, xSpine, midY, xEdge, yEdge, stroke, thickness);
 
@@ -445,7 +464,7 @@
     }
   }
 
-  // Ribs: attach to diagonal at y, extend LEFT (so headings live left of bone)
+  // Ribs: attach to diagonal at y, extend LEFT (so headings/ribs are both left side)
   function drawHeadingRibs() {
     ensureGroups();
     clearGroup(gRibs);
@@ -466,13 +485,12 @@
 
       const br = blockEl.getBoundingClientRect();
 
-      // Place rib slightly BELOW the title row so text doesn't sit on it
+      // rib slightly below title line
       const yPx = br.top + 26 - wrapRect.top;
       const ySvg = (yPx / wrapRect.height) * H;
 
       const xOnBone = xAtY(bone, ySvg);
 
-      // extend leftwards
       const x2 = xOnBone - 6;
       const x1 = x2 - ribLen;
 
@@ -480,7 +498,7 @@
     });
   }
 
-  // Position blocks so they track the diagonal bone; blocks go LEFT of bone
+  // Position blocks so they track the diagonal bone; ALWAYS left of bone
   function positionAllBlocks() {
     const cats = [...model.topCategories, ...model.bottomCategories];
     cats.forEach(c => positionBlocksForCategory(c.id));
@@ -501,21 +519,47 @@
       const contentRect = contentEl.getBoundingClientRect();
 
       const topPxInContent = parseFloat(blockEl.style.top || "0");
-      const yPxInWrapper = (contentRect.top - wrapRect.top) + topPxInContent + 26; // align with rib y choice
+      const yPxInWrapper = (contentRect.top - wrapRect.top) + topPxInContent + 26;
       const ySvg = (yPxInWrapper / wrapRect.height) * H;
 
       const xOnBoneSvg = xAtY(bone, ySvg);
       const xOnBonePx = (xOnBoneSvg / W) * wrapRect.width;
 
-      // Block should sit left of the diagonal bone
       const blockW = Number(model.appearance?.blockWidth ?? 280);
-      let xPx = xOnBonePx - (contentRect.left - wrapRect.left) - blockW - 18;
 
-      // clamp inside content area
+      // x of the bone in content coordinates:
+      const xBoneInContent = xOnBonePx - (contentRect.left - wrapRect.left);
+
+      // place block to the left of the bone
+      let xPx = xBoneInContent - blockW - 16;
+
+      // clamp within content
       const maxX = Math.max(0, contentRect.width - Math.min(blockW, contentRect.width) - 4);
       xPx = clamp(xPx, 0, maxX);
 
       blockEl.style.left = xPx + "px";
+    });
+  }
+
+  // Attach category labels to the outer end of each bone
+  function attachCategoryLabels() {
+    const wrapRect = wrapper.getBoundingClientRect();
+    const W = 1200, H = 720;
+
+    const labels = wrapper.querySelectorAll(".catLabel[data-cat-id]");
+    labels.forEach((labelEl) => {
+      const catId = labelEl.dataset.catId;
+      const bone = catBones.get(catId);
+      if (!bone) return;
+
+      const xEdgePx = (bone.xEdge / W) * wrapRect.width;
+      const yEdgePx = (bone.yEdge / H) * wrapRect.height;
+
+      // place slightly offset from the bone end so it looks "attached"
+      const yOffset = (bone.side === "top") ? 8 : -56;
+
+      labelEl.style.left = `${xEdgePx}px`;
+      labelEl.style.top = `${yEdgePx + yOffset}px`;
     });
   }
 
@@ -572,11 +616,11 @@
     $("boneColor").value = a.boneColor || "#c00000";
     $("boneThickness").value = String(a.boneThickness ?? 10);
     $("fontSize").value = String(a.fontSize ?? 12);
-    $("arrowWidth").value = String(a.arrowWidth ?? 240);
+    $("arrowWidth").value = String(a.arrowWidth ?? 180);
     $("labelWidth").value = String(a.labelWidth ?? 200);
     $("ribLength").value = String(a.ribLength ?? 150);
     $("blockWidth").value = String(a.blockWidth ?? 280);
-    $("boneSlant").value = String(a.boneSlant ?? 220);
+    $("boneSlant").value = String(a.boneSlant ?? 200);
   }
 
   function wireAppearanceControls() {
@@ -584,7 +628,7 @@
     $("boneThickness").addEventListener("input", (e) => { model.appearance.boneThickness = Number(e.target.value); renderAll(); });
     $("fontSize").addEventListener("input", (e) => { model.appearance.fontSize = Number(e.target.value); renderAll(); });
     $("arrowWidth").addEventListener("input", (e) => { model.appearance.arrowWidth = Number(e.target.value); renderAll(); });
-    $("labelWidth").addEventListener("input", (e) => { model.appearance.labelWidth = Number(e.target.value); applyAppearance(); });
+    $("labelWidth").addEventListener("input", (e) => { model.appearance.labelWidth = Number(e.target.value); renderAll(); });
     $("ribLength").addEventListener("input", (e) => { model.appearance.ribLength = Number(e.target.value); renderAll(); });
     $("blockWidth").addEventListener("input", (e) => { model.appearance.blockWidth = Number(e.target.value); renderAll(); });
     $("boneSlant").addEventListener("input", (e) => { model.appearance.boneSlant = Number(e.target.value); renderAll(); });
@@ -632,15 +676,21 @@
           return;
         }
 
+        // Enforce 6 categories: keep first 3/3 if provided, otherwise default.
+        const def = defaultModel();
+
         model = {
-          version: 4,
-          effectText: String(obj.effectText || ""),
+          version: 5,
+          effectText: String(obj.effectText || def.effectText),
           effectPos: obj.effectPos && typeof obj.effectPos === "object"
             ? { dx: Number(obj.effectPos.dx || 0), dy: Number(obj.effectPos.dy || 0) }
-            : { dx: 0, dy: 0 },
-          appearance: { ...defaultModel().appearance, ...(obj.appearance || {}) },
-          topCategories: (obj.topCategories || []).map(sanitizeCategory),
-          bottomCategories: (obj.bottomCategories || []).map(sanitizeCategory)
+            : def.effectPos,
+          effectSize: obj.effectSize && typeof obj.effectSize === "object"
+            ? { w: Number(obj.effectSize.w || def.effectSize.w), h: Number(obj.effectSize.h || def.effectSize.h) }
+            : def.effectSize,
+          appearance: { ...def.appearance, ...(obj.appearance || {}) },
+          topCategories: sanitizeFixed3(obj.topCategories, def.topCategories),
+          bottomCategories: sanitizeFixed3(obj.bottomCategories, def.bottomCategories)
         };
 
         selectedBlockId = null;
@@ -654,11 +704,20 @@
     reader.readAsText(file, "utf-8");
   });
 
-  function sanitizeCategory(cat) {
+  function sanitizeFixed3(arr, fallback3) {
+    const out = [];
+    for (let i = 0; i < 3; i++) {
+      const src = Array.isArray(arr) ? arr[i] : null;
+      out.push(sanitizeCategory(src || fallback3[i], fallback3[i].label));
+    }
+    return out;
+  }
+
+  function sanitizeCategory(cat, defaultLabel) {
     const c = {
-      id: String(cat.id || uid()),
-      label: String(cat.label || "Category"),
-      blocks: Array.isArray(cat.blocks) ? cat.blocks : []
+      id: String(cat?.id || uid()),
+      label: String(cat?.label || defaultLabel || "Category"),
+      blocks: Array.isArray(cat?.blocks) ? cat.blocks : []
     };
     c.blocks = c.blocks.map(b => ({
       id: String(b.id || uid()),
@@ -666,7 +725,7 @@
       bullets: Array.isArray(b.bullets) ? b.bullets.map(x => String(x)) : ["New bullet…"],
       yOffset: typeof b.yOffset === "number" ? b.yOffset : 0
     }));
-    if (!c.blocks.length) c.blocks.push({ id: uid(), title: "Heading", bullets: ["New bullet…"], yOffset: 0 });
+    if (!c.blocks.length) c.blocks.push({ id: uid(), title: "Heading", bullets: ["Add bullet point…"], yOffset: 0 });
     return c;
   }
 
@@ -724,11 +783,13 @@
     drawStaticBones();
     positionAllBlocks();
     drawHeadingRibs();
+    attachCategoryLabels();
   });
 
   // ---------- Init ----------
   syncControlsFromModel();
   wireAppearanceControls();
+  setupEffectResizeObserver();
   renderAll();
 
 })();

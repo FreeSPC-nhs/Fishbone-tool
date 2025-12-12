@@ -1,83 +1,107 @@
-/* fishbone.js
-   Fishbone editor with “bones-first” layout and in-diagram editing.
-
-   - Thick red spine + ribs + arrow, similar to the provided reference image.
-   - Regions are editable directly on the diagram (contenteditable).
-   - Hover controls per region: +Heading, +Bullet, Remove category.
-   - JSON import/export + PNG/PDF export.
+/* fishbone.js (v2)
+   - Thick spine + arrow + diagonal bones
+   - Horizontal "sub-bones" per heading (auto-follow heading position)
+   - Drag headings vertically (grab the heading title)
+   - Collapsible side settings panel (colours/font/thickness/etc.)
 */
 
 (function () {
   const $ = (id) => document.getElementById(id);
 
   // ---------- Model ----------
-  // Each category has blocks; each block has title + bullets.
   let model = defaultModel();
 
   function defaultModel() {
     return {
-      version: 1,
+      version: 2,
       effectText: ">40% A&E attendances for HIO (>20 attendances) are for avoidable reasons which can be supported in the community",
+      appearance: {
+        boneColor: "#c00000",
+        boneThickness: 10,
+        fontSize: 12,
+        arrowWidth: 240,
+        labelWidth: 200
+      },
       topCategories: [
-        makeCategory("Relationships & Culture"),
-        makeCategory("Communication & Coordination"),
-        makeCategory("Processes & Procedures")
+        makeCategory("Relationships & Culture", 0),
+        makeCategory("Communication & Coordination", 0),
+        makeCategory("Processes & Procedures", 0)
       ],
       bottomCategories: [
-        makeCategory("Resources & Infrastructure"),
-        makeCategory("Methods & Ways of Working"),
-        makeCategory("Environment & External Factors")
+        makeCategory("Resources & Infrastructure", 0),
+        makeCategory("Methods & Ways of Working", 0),
+        makeCategory("Environment & External Factors", 0)
       ]
     };
   }
 
-  function makeCategory(label) {
+  function makeCategory(label, initialYOffset) {
     return {
-      id: cryptoId(),
+      id: uid(),
       label: label || "New category",
       blocks: [
         {
-          id: cryptoId(),
+          id: uid(),
           title: "Heading",
-          bullets: ["Add bullet point…"]
+          bullets: ["Add bullet point…"],
+          yOffset: initialYOffset || 0
         }
       ]
     };
   }
 
-  function cryptoId() {
-    // Simple ID (works on GitHub Pages without extra libs)
+  function uid() {
     return Math.random().toString(16).slice(2) + Date.now().toString(16);
   }
 
-  // ---------- Rendering ----------
+  // ---------- DOM ----------
   const svg = $("bonesSvg");
+  const wrapper = $("diagramWrapper");
   const rowTop = $("rowTop");
   const rowBottom = $("rowBottom");
   const effectTextEl = $("effectText");
 
+  // SVG groups so we can redraw parts efficiently
+  let gStatic = null;
+  let gHeading = null;
+
+  // Drag state
+  let drag = null; // { block, el, startY, startOffset, contentEl, side }
+
+  // ---------- Rendering ----------
+  function applyAppearance() {
+    const a = model.appearance || {};
+    document.documentElement.style.setProperty("--bone", a.boneColor || "#c00000");
+    document.documentElement.style.setProperty("--bone-thickness", String(a.boneThickness ?? 10));
+    document.documentElement.style.setProperty("--diagram-font", (a.fontSize ?? 12) + "px");
+    document.documentElement.style.setProperty("--arrow-width", (a.arrowWidth ?? 240) + "px");
+    document.documentElement.style.setProperty("--label-width", (a.labelWidth ?? 200) + "px");
+  }
+
   function renderAll() {
+    applyAppearance();
     effectTextEl.textContent = model.effectText || "";
 
-    // Build region grids
     renderRegions(rowTop, model.topCategories, "top");
     renderRegions(rowBottom, model.bottomCategories, "bottom");
 
-    // Draw bones after DOM exists
-    requestAnimationFrame(drawBones);
+    requestAnimationFrame(() => {
+      drawStaticBones();
+      drawHeadingBones(); // follow headings
+    });
   }
 
   function renderRegions(container, categories, side) {
     container.innerHTML = "";
     container.style.gridTemplateColumns = `repeat(${Math.max(1, categories.length)}, 1fr)`;
 
-    categories.forEach((cat, idx) => {
+    categories.forEach((cat) => {
       const region = document.createElement("div");
       region.className = "region";
       region.dataset.side = side;
       region.dataset.catId = cat.id;
 
-      // Category label
+      // Label
       const label = document.createElement("div");
       label.className = `catLabel ${side}`;
       label.contentEditable = "true";
@@ -87,68 +111,65 @@
         cat.label = label.textContent.trim() || "Category";
       });
 
-      // Region hover controls
+      // Controls
       const controls = document.createElement("div");
       controls.className = "regionControls";
 
-      const btnAddHeading = document.createElement("button");
-      btnAddHeading.className = "chipBtn";
-      btnAddHeading.type = "button";
-      btnAddHeading.textContent = "+ Heading";
-      btnAddHeading.addEventListener("click", (e) => {
-        e.stopPropagation();
-        cat.blocks.push({ id: cryptoId(), title: "New heading", bullets: ["New bullet…"] });
+      const btnAddHeading = mkBtn("+ Heading", () => {
+        const base = suggestedYOffsetForNewBlock(cat, region);
+        cat.blocks.push({ id: uid(), title: "New heading", bullets: ["New bullet…"], yOffset: base });
         renderAll();
       });
 
-      const btnAddBullet = document.createElement("button");
-      btnAddBullet.className = "chipBtn";
-      btnAddBullet.type = "button";
-      btnAddBullet.textContent = "+ Bullet";
-      btnAddBullet.addEventListener("click", (e) => {
-        e.stopPropagation();
-        // Add bullet to the last block (simple behaviour, easy UX)
-        if (!cat.blocks.length) cat.blocks.push({ id: cryptoId(), title: "Heading", bullets: [] });
+      const btnAddBullet = mkBtn("+ Bullet", () => {
+        if (!cat.blocks.length) cat.blocks.push({ id: uid(), title: "Heading", bullets: [], yOffset: 0 });
         cat.blocks[cat.blocks.length - 1].bullets.push("New bullet…");
         renderAll();
       });
 
-      const btnRemoveCat = document.createElement("button");
-      btnRemoveCat.className = "chipBtn danger";
-      btnRemoveCat.type = "button";
-      btnRemoveCat.textContent = "Remove";
-      btnRemoveCat.addEventListener("click", (e) => {
-        e.stopPropagation();
+      const btnRemoveCat = mkBtn("Remove", () => {
         const ok = window.confirm(`Remove category “${cat.label}”?`);
         if (!ok) return;
-        if (side === "top") {
-          model.topCategories = model.topCategories.filter(c => c.id !== cat.id);
-        } else {
-          model.bottomCategories = model.bottomCategories.filter(c => c.id !== cat.id);
-        }
+        if (side === "top") model.topCategories = model.topCategories.filter(c => c.id !== cat.id);
+        else model.bottomCategories = model.bottomCategories.filter(c => c.id !== cat.id);
         renderAll();
-      });
+      }, true);
 
       controls.appendChild(btnAddHeading);
       controls.appendChild(btnAddBullet);
       controls.appendChild(btnRemoveCat);
 
-      // Content blocks
+      // Content area (positioned)
       const content = document.createElement("div");
       content.className = "content";
 
-      cat.blocks.forEach((block) => {
+      // Place blocks (absolute within content)
+      cat.blocks.forEach((block, idx) => {
         const blockEl = document.createElement("div");
         blockEl.className = "block";
         blockEl.dataset.blockId = block.id;
+        blockEl.style.top = `${clamp(block.yOffset, -20, 9999)}px`;
 
+        // Title (draggable)
         const title = document.createElement("div");
         title.className = "blockTitle";
         title.contentEditable = "true";
         title.spellcheck = false;
         title.textContent = block.title || "";
+        title.dataset.blockId = block.id;
+
         title.addEventListener("input", () => {
           block.title = title.textContent.trim() || "Heading";
+        });
+
+        // Drag on mousedown (only if not currently editing selection)
+        title.addEventListener("mousedown", (e) => {
+          // prevent dragging when user tries to select text with mouse
+          // allow drag if click near left edge or with Alt key
+          const nearLeft = (e.offsetX ?? 0) < 12;
+          if (!nearLeft && !e.altKey) return;
+          e.preventDefault();
+          startDrag(block, blockEl, content, side, e.clientY);
         });
 
         const delBlock = document.createElement("span");
@@ -162,12 +183,11 @@
           cat.blocks = cat.blocks.filter(b => b.id !== block.id);
           renderAll();
         });
-
         title.appendChild(delBlock);
 
+        // Bullets
         const ul = document.createElement("ul");
         ul.className = "bullets";
-
         (block.bullets || []).forEach((txt, i) => {
           const li = document.createElement("li");
           li.contentEditable = "true";
@@ -175,7 +195,7 @@
           li.textContent = txt;
 
           li.addEventListener("input", () => {
-            block.bullets[i] = li.textContent.trim() || "";
+            block.bullets[i] = li.textContent.trim();
           });
 
           const del = document.createElement("span");
@@ -196,6 +216,9 @@
         blockEl.appendChild(title);
         blockEl.appendChild(ul);
         content.appendChild(blockEl);
+
+        // If new block has undefined offset, stack it
+        if (block.yOffset == null) block.yOffset = idx * 85;
       });
 
       region.appendChild(label);
@@ -205,129 +228,205 @@
     });
   }
 
-  // ---------- Bones SVG ----------
-  function drawBones() {
-    // Coordinate system: 1200 x 720
-    // We draw:
-    // - spine (thick red horizontal)
-    // - angled separators (thick red diagonals)
-    // - arrow head and fill (solid red)
-    // - optional small ribs (thin grey) are skipped to keep the look close to your example
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
+  function mkBtn(text, onClick, danger=false) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = danger ? "chipBtn danger" : "chipBtn";
+    b.textContent = text;
+    b.addEventListener("click", (e) => { e.stopPropagation(); onClick(); });
+    return b;
+  }
+
+  function suggestedYOffsetForNewBlock(cat, regionEl) {
+    // try to place beneath the lowest existing block
+    const content = regionEl.querySelector(".content");
+    if (!content) return 0;
+    const blocks = content.querySelectorAll(".block");
+    let maxBottom = 0;
+    blocks.forEach(b => {
+      const r = b.getBoundingClientRect();
+      const c = content.getBoundingClientRect();
+      maxBottom = Math.max(maxBottom, (r.bottom - c.top));
+    });
+    return Math.round(maxBottom + 18);
+  }
+
+  // ---------- Dragging ----------
+  function startDrag(block, blockEl, contentEl, side, startClientY) {
+    drag = {
+      block,
+      blockEl,
+      contentEl,
+      side,
+      startY: startClientY,
+      startOffset: block.yOffset || 0
+    };
+    document.addEventListener("mousemove", onDragMove);
+    document.addEventListener("mouseup", onDragEnd, { once: true });
+  }
+
+  function onDragMove(e) {
+    if (!drag) return;
+    const dy = e.clientY - drag.startY;
+    const newOffset = drag.startOffset + dy;
+
+    // clamp inside content box
+    const contentRect = drag.contentEl.getBoundingClientRect();
+    // allow a little negative so user can nudge near top
+    const min = -10;
+    const max = Math.max(min, contentRect.height - 40);
+
+    drag.block.yOffset = clamp(newOffset, min, max);
+    drag.blockEl.style.top = `${drag.block.yOffset}px`;
+
+    // bones should follow live without rerender
+    drawHeadingBones();
+  }
+
+  function onDragEnd() {
+    document.removeEventListener("mousemove", onDragMove);
+    drag = null;
+    // final tidy redraw
+    drawHeadingBones();
+  }
+
+  // ---------- Bones drawing ----------
+  function ensureGroups() {
+    if (!gStatic) {
+      gStatic = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      svg.appendChild(gStatic);
+    }
+    if (!gHeading) {
+      gHeading = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      svg.appendChild(gHeading);
+    }
+  }
+
+  function clearGroup(g) {
+    while (g.firstChild) g.removeChild(g.firstChild);
+  }
+
+  function drawStaticBones() {
+    ensureGroups();
+    clearGroup(gStatic);
 
     const W = 1200, H = 720;
     const midY = Math.round(H * 0.5);
 
+    const a = model.appearance || {};
+    const boneStroke = a.boneColor || cssVar("--bone");
+    const boneStrokeDark = cssVar("--bone-dark");
+    const thickness = Number(a.boneThickness ?? 10);
+
     const marginL = 60;
-    const arrowW = 240;
+    const arrowW = Number(a.arrowWidth ?? 240);
     const arrowX = W - arrowW;
     const spineStart = marginL;
     const spineEnd = arrowX - 24;
 
-    const boneStroke = cssVar("--bone");
-    const boneStrokeDark = cssVar("--bone-dark");
-
     // Spine
-    line(spineStart, midY, spineEnd, midY, boneStroke, 10);
+    addLine(gStatic, spineStart, midY, spineEnd, midY, boneStroke, thickness);
 
-    // Arrow body + head
-    const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    // Arrow head
     const arrowTop = midY - 95;
     const arrowBot = midY + 95;
     const arrowTipX = W - 18;
     const arrowBodyX = arrowX;
-    const d = [
+
+    addPath(gStatic, [
       `M ${arrowBodyX} ${arrowTop}`,
       `L ${arrowTipX} ${midY}`,
       `L ${arrowBodyX} ${arrowBot}`,
       `L ${arrowBodyX} ${arrowTop}`,
       "Z"
-    ].join(" ");
-    arrow.setAttribute("d", d);
-    arrow.setAttribute("fill", boneStroke);
-    svg.appendChild(arrow);
+    ].join(" "), boneStroke, boneStrokeDark);
 
-    // Arrow outline (slightly darker)
-    const arrowOutline = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    arrowOutline.setAttribute("d", d);
-    arrowOutline.setAttribute("fill", "none");
-    arrowOutline.setAttribute("stroke", boneStrokeDark);
-    arrowOutline.setAttribute("stroke-width", "2");
-    svg.appendChild(arrowOutline);
+    // Left small tail
+    addLine(gStatic, spineStart - 40, midY, spineStart, midY, boneStroke, Math.max(4, thickness - 4));
 
-    // Diagonal separators for TOP and BOTTOM
-    // We mimic the reference: big diagonal ribs that divide the regions.
-    const nTop = Math.max(1, model.topCategories.length);
-    const nBottom = Math.max(1, model.bottomCategories.length);
+    // Diagonals aligned to category boundaries (DOM-based)
+    drawSideSeparators(gStatic, "top", spineStart, spineEnd, midY, thickness, boneStroke);
+    drawSideSeparators(gStatic, "bottom", spineStart, spineEnd, midY, thickness, boneStroke);
+  }
 
-    // We draw boundaries = number of categories (like your example), plus one “extra” at far left.
-    drawSideSeparators("top", nTop);
-    drawSideSeparators("bottom", nBottom);
+  function drawSideSeparators(group, side, spineStart, spineEnd, midY, thickness, stroke) {
+    const W = 1200, H = 720;
+    const row = side === "top" ? rowTop : rowBottom;
+    const wrapRect = wrapper.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
 
-    // A small “tail” line at the very left (thin red horizontal) like the example sometimes shows
-    line(spineStart - 40, midY, spineStart, midY, boneStroke, 6);
+    const yEdge = side === "top" ? 40 : (H - 40);
 
-    // helper: for nicer diagonals we base endpoints on region grid positions from DOM
-    // If DOM is available, align diagonals to the column boundaries so bones match layout.
-    function drawSideSeparators(side, n) {
-      const row = side === "top" ? rowTop : rowBottom;
-      const rect = row.getBoundingClientRect();
-      const wrap = $("diagramWrapper").getBoundingClientRect();
+    // Build boundary x positions from grid regions
+    const regions = row.querySelectorAll(".region");
+    const boundariesPx = [];
+    boundariesPx.push(rowRect.left - wrapRect.left + 10);
+    regions.forEach(r => {
+      const rr = r.getBoundingClientRect();
+      boundariesPx.push(rr.right - wrapRect.left - 10);
+    });
 
-      // Fallback if DOM not measurable
-      if (!rect.width) {
-        const step = (spineEnd - spineStart) / (n + 1);
-        for (let i = 0; i <= n; i++) {
-          const xSpine = spineStart + step * (i + 0.7);
-          const yEdge = side === "top" ? 35 : (H - 35);
-          const xEdge = spineStart + (i * (spineEnd - spineStart) / (n + 1)) * 0.55;
-          line(xSpine, midY, xEdge, yEdge, boneStroke, 10);
-        }
-        return;
+    // If we can't measure yet, fallback to uniform
+    if (!rowRect.width || boundariesPx.length < 2) {
+      const n = Math.max(1, regions.length || 3);
+      const step = (spineEnd - spineStart) / (n + 1);
+      for (let i = 0; i <= n; i++) {
+        const t = i / (n + 0.5);
+        const xEdge = spineStart + t * (spineEnd - spineStart) * 0.55;
+        const xSpine = spineStart + step * (i + 0.8);
+        addLine(group, xSpine, midY, xEdge, yEdge, stroke, thickness);
       }
-
-      // Determine column boundary x positions from actual grid
-      const cols = row.querySelectorAll(".region");
-      const boundaries = [];
-
-      // left boundary
-      boundaries.push(rect.left - wrap.left + 10);
-
-      // internal boundaries: use each region's right edge
-      cols.forEach((c) => {
-        const r = c.getBoundingClientRect();
-        boundaries.push(r.right - wrap.left - 10);
-      });
-
-      // For each boundary draw a diagonal from spine to edge
-      boundaries.forEach((xEdge, idx) => {
-        // Map xEdge (in wrapper px space) to SVG space
-        const xEdgeSvg = pxToSvgX(xEdge);
-        const yEdgeSvg = side === "top" ? 40 : (H - 40);
-
-        // Anchor on spine: spread anchors across spine
-        const t = idx / Math.max(1, boundaries.length - 1);
-        const xSpineSvg = spineStart + t * (spineEnd - spineStart) * 0.92 + 18;
-
-        line(xSpineSvg, midY, xEdgeSvg, yEdgeSvg, boneStroke, 10);
-      });
+      return;
     }
 
-    function pxToSvgX(px) {
-      // wrapper client width -> svg width
-      const wrap = $("diagramWrapper").getBoundingClientRect();
-      const x = (px / wrap.width) * W;
-      return clamp(x, 0, W);
+    boundariesPx.forEach((xEdgePx, idx) => {
+      const xEdge = pxToSvgX(xEdgePx, wrapRect.width);
+      const t = idx / Math.max(1, boundariesPx.length - 1);
+      const xSpine = spineStart + t * (spineEnd - spineStart) * 0.92 + 18;
+      addLine(group, xSpine, midY, xEdge, yEdge, stroke, thickness);
+    });
+
+    function pxToSvgX(px, wrapW) {
+      const W = 1200;
+      return clamp((px / wrapW) * W, 0, W);
     }
   }
 
-  function cssVar(name) {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#c00000";
+  // Horizontal “heading bones” (follow heading positions)
+  function drawHeadingBones() {
+    ensureGroups();
+    clearGroup(gHeading);
+
+    const a = model.appearance || {};
+    const stroke = a.boneColor || cssVar("--bone");
+    const thickness = Math.max(2, Number(a.boneThickness ?? 10) - 4);
+
+    const wrapRect = wrapper.getBoundingClientRect();
+    const wrapW = wrapRect.width;
+    const W = 1200;
+
+    // For each block title, draw a small horizontal rib behind it
+    const titles = wrapper.querySelectorAll(".blockTitle[data-block-id]");
+    titles.forEach((t) => {
+      const r = t.getBoundingClientRect();
+
+      // Ignore if not visible
+      if (r.width < 2 || r.height < 2) return;
+
+      // Convert to svg coords
+      const y = ((r.top + r.height * 0.65) - wrapRect.top) / wrapRect.height * 720;
+      const xLeft = ((r.left - wrapRect.left) / wrapW) * W;
+
+      // Start a bit left of the text, extend right
+      const start = clamp(xLeft - 18, 0, W);
+      const len = 130;
+      const end = clamp(start + len, 0, W);
+
+      addLine(gHeading, start, y, end, y, stroke, thickness);
+    });
   }
 
-  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
-
-  function line(x1, y1, x2, y2, stroke, width) {
+  function addLine(group, x1, y1, x2, y2, stroke, width) {
     const el = document.createElementNS("http://www.w3.org/2000/svg", "line");
     el.setAttribute("x1", x1);
     el.setAttribute("y1", y1);
@@ -336,23 +435,91 @@
     el.setAttribute("stroke", stroke);
     el.setAttribute("stroke-width", String(width));
     el.setAttribute("stroke-linecap", "butt");
-    svg.appendChild(el);
+    group.appendChild(el);
   }
 
-  // ---------- On-canvas add category buttons ----------
+  function addPath(group, d, fill, stroke) {
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d);
+    p.setAttribute("fill", fill);
+    group.appendChild(p);
+
+    const outline = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    outline.setAttribute("d", d);
+    outline.setAttribute("fill", "none");
+    outline.setAttribute("stroke", stroke);
+    outline.setAttribute("stroke-width", "2");
+    group.appendChild(outline);
+  }
+
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#c00000";
+  }
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+  // ---------- Interactions ----------
   $("addTopBtn").addEventListener("click", () => {
-    model.topCategories.push(makeCategory("New top category"));
-    renderAll();
-  });
-  $("addBottomBtn").addEventListener("click", () => {
-    model.bottomCategories.push(makeCategory("New bottom category"));
+    model.topCategories.push(makeCategory("New top category", 0));
     renderAll();
   });
 
-  // ---------- Effect text editing ----------
+  $("addBottomBtn").addEventListener("click", () => {
+    model.bottomCategories.push(makeCategory("New bottom category", 0));
+    renderAll();
+  });
+
   effectTextEl.addEventListener("input", () => {
     model.effectText = effectTextEl.textContent.trim();
   });
+
+  // ---------- Side panel ----------
+  const sidePanel = $("sidePanel");
+  $("openPanel").addEventListener("click", () => sidePanel.classList.add("open"));
+  $("closePanel").addEventListener("click", () => sidePanel.classList.remove("open"));
+
+  // Controls (sync from model -> UI)
+  function syncControlsFromModel() {
+    const a = model.appearance || {};
+    $("boneColor").value = a.boneColor || "#c00000";
+    $("boneThickness").value = String(a.boneThickness ?? 10);
+    $("fontSize").value = String(a.fontSize ?? 12);
+    $("arrowWidth").value = String(a.arrowWidth ?? 240);
+    $("labelWidth").value = String(a.labelWidth ?? 200);
+  }
+
+  function wireAppearanceControls() {
+    $("boneColor").addEventListener("input", (e) => {
+      model.appearance.boneColor = e.target.value;
+      applyAppearance();
+      drawStaticBones();
+      drawHeadingBones();
+    });
+
+    $("boneThickness").addEventListener("input", (e) => {
+      model.appearance.boneThickness = Number(e.target.value);
+      applyAppearance();
+      drawStaticBones();
+      drawHeadingBones();
+    });
+
+    $("fontSize").addEventListener("input", (e) => {
+      model.appearance.fontSize = Number(e.target.value);
+      applyAppearance();
+      drawHeadingBones();
+    });
+
+    $("arrowWidth").addEventListener("input", (e) => {
+      model.appearance.arrowWidth = Number(e.target.value);
+      applyAppearance();
+      drawStaticBones();
+      drawHeadingBones();
+    });
+
+    $("labelWidth").addEventListener("input", (e) => {
+      model.appearance.labelWidth = Number(e.target.value);
+      applyAppearance();
+    });
+  }
 
   // ---------- Export / import ----------
   $("btnExportJSON").addEventListener("click", () => {
@@ -380,11 +547,17 @@
           alert("That JSON does not look like a fishbone model.");
           return;
         }
-        model = obj;
-        // safety defaults
-        model.effectText = model.effectText || "";
-        model.topCategories = model.topCategories.map(sanitizeCategory);
-        model.bottomCategories = model.bottomCategories.map(sanitizeCategory);
+
+        // light sanitisation
+        model = {
+          version: 2,
+          effectText: String(obj.effectText || ""),
+          appearance: { ...defaultModel().appearance, ...(obj.appearance || {}) },
+          topCategories: (obj.topCategories || []).map(sanitizeCategory),
+          bottomCategories: (obj.bottomCategories || []).map(sanitizeCategory)
+        };
+
+        syncControlsFromModel();
         renderAll();
       } catch (err) {
         console.error(err);
@@ -396,25 +569,25 @@
 
   function sanitizeCategory(cat) {
     const c = {
-      id: String(cat.id || cryptoId()),
+      id: String(cat.id || uid()),
       label: String(cat.label || "Category"),
       blocks: Array.isArray(cat.blocks) ? cat.blocks : []
     };
     c.blocks = c.blocks.map(b => ({
-      id: String(b.id || cryptoId()),
+      id: String(b.id || uid()),
       title: String(b.title || "Heading"),
-      bullets: Array.isArray(b.bullets) ? b.bullets.map(x => String(x)) : []
+      bullets: Array.isArray(b.bullets) ? b.bullets.map(x => String(x)) : ["New bullet…"],
+      yOffset: typeof b.yOffset === "number" ? b.yOffset : 0
     }));
-    if (!c.blocks.length) c.blocks.push({ id: cryptoId(), title: "Heading", bullets: ["New bullet…"] });
+    if (!c.blocks.length) c.blocks.push({ id: uid(), title: "Heading", bullets: ["New bullet…"], yOffset: 0 });
     return c;
   }
 
   // PNG export
   $("btnExportPNG").addEventListener("click", async () => {
-    const wrap = $("diagramWrapper");
-    wrap.classList.add("export-clean");
+    wrapper.classList.add("export-clean");
     try {
-      const canvas = await html2canvas(wrap, { scale: 2 });
+      const canvas = await html2canvas(wrapper, { scale: 2 });
       const a = document.createElement("a");
       a.download = "fishbone-diagram.png";
       a.href = canvas.toDataURL("image/png");
@@ -425,14 +598,13 @@
       console.error(e);
       alert("Could not export PNG.");
     } finally {
-      wrap.classList.remove("export-clean");
+      wrapper.classList.remove("export-clean");
     }
   });
 
-  // PDF export (landscape)
+  // PDF export
   $("btnExportPDF").addEventListener("click", async () => {
-    const wrap = $("diagramWrapper");
-    wrap.classList.add("export-clean");
+    wrapper.classList.add("export-clean");
     try {
       const opt = {
         margin: 8,
@@ -441,12 +613,12 @@
         html2canvas: { scale: 2 },
         jsPDF: { unit: "mm", format: "a4", orientation: "landscape" }
       };
-      await html2pdf().from(wrap).set(opt).save();
+      await html2pdf().from(wrapper).set(opt).save();
     } catch (e) {
       console.error(e);
       alert("Could not export PDF.");
     } finally {
-      wrap.classList.remove("export-clean");
+      wrapper.classList.remove("export-clean");
     }
   });
 
@@ -455,15 +627,19 @@
     const ok = window.confirm("Reset to a fresh fishbone model?");
     if (!ok) return;
     model = defaultModel();
+    syncControlsFromModel();
     renderAll();
   });
 
-  // Keep bones aligned on resize
+  // Re-align on resize
   window.addEventListener("resize", () => {
-    drawBones();
+    drawStaticBones();
+    drawHeadingBones();
   });
 
   // ---------- Init ----------
+  syncControlsFromModel();
+  wireAppearanceControls();
   renderAll();
 
 })();

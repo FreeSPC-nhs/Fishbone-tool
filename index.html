@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fishbone Diagram Tool</title>
 
-  <!-- Export helpers -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
@@ -22,14 +21,10 @@
       --diagram-font:12px;
       --bone-thickness:10;
 
-      /* Smaller default arrow, as requested */
       --arrow-width:180px;
-
       --label-width:200px;
       --rib-length:150px;
-      --block-width:280px;
-
-      /* diagonal slant */
+      --block-width:300px;
       --bone-slant:200px;
     }
 
@@ -107,69 +102,44 @@
       z-index:1;
     }
 
-    /* Overlay for text regions */
-    #regionsLayer{
+    /* Layers above SVG (wrapper-relative coordinates) */
+    #labelsLayer, #blocksLayer{
       position:absolute;
       inset:0;
-      display:grid;
-      grid-template-rows: 1fr 110px 1fr;
-      padding:18px;
-      box-sizing:border-box;
-      z-index:2;
+      z-index:3;
       pointer-events:none;
     }
-    .rowTop, .rowBottom{
-      display:grid;
-      pointer-events:none;
-    }
-    .spineRow{ pointer-events:none; }
+    #blocksLayer{ z-index:4; }
 
-    .region{
-      position:relative;
-      padding:10px 14px;
-      box-sizing:border-box;
-      pointer-events:auto;
-      overflow:hidden;
-    }
-
-    /* Category labels (positioned by JS to attach to bones) */
+    /* Category labels (attached to bones; positioned in wrapper coords by JS) */
     .catLabel{
       position:absolute;
+      width: var(--label-width);
+      max-width: 280px;
       background:#fff;
       border:2px solid var(--bone);
       color:var(--bone);
       padding:6px 10px;
       font-weight:700;
-      border-radius:0;
       font-size:0.92rem;
       line-height:1.15;
-      width: var(--label-width);
-      max-width: 90%;
       text-align:center;
       box-sizing:border-box;
+      transform: translate(-50%, 0);
+      pointer-events:auto;
       cursor:text;
       user-select:text;
-      transform: translate(-50%, 0);
-      z-index:3;
     }
 
-    .content{
-      position:absolute;
-      left:10px;
-      right:10px;
-      top:56px;
-      bottom:56px;
-      font-size: var(--diagram-font);
-      line-height:1.25;
-      color:#111;
-    }
-
+    /* Heading blocks (positioned by JS from bone geometry) */
     .block{
       position:absolute;
       width: var(--block-width);
-      max-width: 92%;
-      padding:2px 4px;
+      max-width: 360px;
+      padding:4px 6px;
       border-radius:8px;
+      pointer-events:auto;
+      box-sizing:border-box;
     }
     .block.is-selected{
       background: rgba(0,94,184,0.08);
@@ -212,12 +182,10 @@
     .bullets{
       margin:0;
       padding-left:34px;
+      font-size: var(--diagram-font);
+      line-height:1.25;
     }
-    .bullets li{
-      margin:2px 0;
-      cursor:text;
-      user-select:text;
-    }
+    .bullets li{ margin:2px 0; cursor:text; user-select:text; }
 
     [contenteditable="true"]:focus{
       outline: 2px solid rgba(0,94,184,0.35);
@@ -225,32 +193,6 @@
       border-radius:4px;
     }
 
-    /* Region hover controls */
-    .regionControls{
-      position:absolute;
-      top:52px;
-      right:10px;
-      display:flex;
-      gap:6px;
-      opacity:0;
-      transition:opacity 120ms ease;
-      pointer-events:auto;
-      z-index:5;
-    }
-    .region:hover .regionControls{ opacity:1; }
-
-    .chipBtn{
-      font-size:11px;
-      padding:4px 8px;
-      border-radius:999px;
-      border:1px solid #ddd;
-      background:#fff;
-      cursor:pointer;
-      user-select:none;
-    }
-    .chipBtn:hover{ background:#f5f7fb; }
-
-    /* Delete controls (headings/bullets ok) */
     .del{
       display:inline-block;
       margin-left:6px;
@@ -263,13 +205,35 @@
     }
     .block:hover .del, .bullets li:hover .del{ opacity:0.95; }
 
+    /* Floating tools near selected heading */
+    #floatingTools{
+      position:absolute;
+      z-index:20;
+      display:none;
+      gap:6px;
+      align-items:center;
+      pointer-events:auto;
+    }
+    #floatingTools button{
+      font-size:11px;
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid #ddd;
+      background:#fff;
+      cursor:pointer;
+      user-select:none;
+      white-space:nowrap;
+      box-shadow:0 1px 3px rgba(0,0,0,0.08);
+    }
+    #floatingTools button:hover{ background:#f5f7fb; }
+
     /* Effect arrow text overlay + move handle */
     #effectBox{
       position:absolute;
       top:50%;
       left: calc(100% - var(--arrow-width) + 22px);
       transform: translateY(-50%);
-      z-index:3;
+      z-index:5;
       pointer-events:auto;
     }
     #effectDrag{
@@ -292,7 +256,6 @@
     }
     #effectDrag:active{ cursor:grabbing; }
 
-    /* Resizable textbox (PowerPoint-style) */
     #effectText{
       color:#fff;
       font-weight:700;
@@ -301,14 +264,10 @@
       padding:12px 14px;
       box-sizing:border-box;
       user-select:text;
-
       resize: both;
       overflow: auto;
-
       min-width: 120px;
       min-height: 70px;
-
-      /* subtle affordance when interacting */
       border: 1px solid rgba(255,255,255,0.0);
       border-radius: 6px;
     }
@@ -422,12 +381,12 @@
     }
 
     /* Export-clean mode */
-    .export-clean .regionControls,
     .export-clean .del,
     .export-clean .dragHandle,
     .export-clean #effectDrag,
     .export-clean .panelHandle,
-    .export-clean #sidePanel{
+    .export-clean #sidePanel,
+    .export-clean #floatingTools{
       display:none !important;
     }
 
@@ -444,8 +403,8 @@
   <div>
     <h1>Fishbone Diagram Tool</h1>
     <p>
-      Click text to edit. Click a heading to select it (highlight). Use ⠿ to drag a heading up/down along the diagonal bone.
-      “+ Bullet” adds to the selected heading in that category.
+      Click text to edit. Click a heading to select it. Drag using ⠿ and it will stay attached to the category bone.
+      Use the floating buttons near the selected heading to add headings/bullets.
     </p>
   </div>
 
@@ -464,6 +423,14 @@
 <div class="card">
   <div id="diagramWrapper">
     <svg id="bonesSvg" viewBox="0 0 1200 720" preserveAspectRatio="none"></svg>
+
+    <div id="labelsLayer"></div>
+    <div id="blocksLayer"></div>
+
+    <div id="floatingTools">
+      <button id="btnAddHeading" type="button">+ Heading</button>
+      <button id="btnAddBullet" type="button">+ Bullet</button>
+    </div>
 
     <button id="openPanel" class="panelHandle" type="button" title="Open settings">⚙ Settings</button>
 
@@ -508,7 +475,7 @@
 
         <div class="field">
           <label for="blockWidth">Heading block width</label>
-          <input type="range" id="blockWidth" min="180" max="520" value="280">
+          <input type="range" id="blockWidth" min="180" max="520" value="300">
         </div>
 
         <div class="field">
@@ -518,12 +485,6 @@
       </div>
     </div>
 
-    <div id="regionsLayer">
-      <div class="rowTop" id="rowTop"></div>
-      <div class="spineRow"></div>
-      <div class="rowBottom" id="rowBottom"></div>
-    </div>
-
     <div id="effectBox">
       <div id="effectDrag" title="Drag arrow text">↕</div>
       <div id="effectText" contenteditable="true" spellcheck="false"></div>
@@ -531,7 +492,7 @@
   </div>
 
   <div class="note">
-    Tip: Click a heading to select it. Then use “+ Bullet” in that category to add to the selected heading.
+    Tip: Select a heading; the +Heading/+Bullet buttons will appear next to it.
   </div>
 </div>
 
@@ -544,38 +505,30 @@
     <h3>Edit text</h3>
     <ul>
       <li>Click any category label, heading, or bullet point to edit.</li>
-      <li>Click outside the text when finished.</li>
     </ul>
 
-    <h3>Select a heading (for + Bullet)</h3>
+    <h3>Select and add</h3>
     <ul>
-      <li>Click a heading block to select it (it highlights).</li>
-      <li>Use “+ Bullet” in that category to add to the selected heading.</li>
-      <li>If nothing is selected, “+ Bullet” adds to the last heading in that category.</li>
+      <li>Click a heading to select it.</li>
+      <li>Use the floating <strong>+ Heading</strong> / <strong>+ Bullet</strong> buttons next to the selected heading.</li>
     </ul>
 
     <h3>Move headings</h3>
     <ul>
-      <li>Use the ⠿ grab handle to drag a heading up/down.</li>
-      <li>Ribs stay attached to the diagonal category bone.</li>
+      <li>Drag using the ⠿ handle. Headings remain attached to the category bone.</li>
     </ul>
 
     <h3>Problem / effect</h3>
     <ul>
-      <li>Click the arrow text to edit (“Add your problem here”).</li>
-      <li>Drag the ↕ handle to move it.</li>
-      <li>Resize the text box using the resize handle in the bottom-right corner of the box.</li>
+      <li>Click the arrow text to edit.</li>
+      <li>Drag ↕ to move it.</li>
+      <li>Resize the box using the bottom-right resize handle.</li>
     </ul>
 
-    <h3>Save, reload and export</h3>
+    <h3>Save and export</h3>
     <ul>
-      <li><strong>Export JSON</strong> saves your model; use <strong>Import JSON</strong> to reload.</li>
-      <li><strong>Export PNG/PDF</strong> captures the diagram for reports and slides.</li>
-    </ul>
-
-    <h3>Settings</h3>
-    <ul>
-      <li>Use <strong>Settings</strong> to adjust colours, font size, and bone/rib formatting.</li>
+      <li><strong>Export JSON</strong> saves; <strong>Import JSON</strong> reloads.</li>
+      <li><strong>Export PNG/PDF</strong> captures the diagram for reporting.</li>
     </ul>
   </div>
 </div>

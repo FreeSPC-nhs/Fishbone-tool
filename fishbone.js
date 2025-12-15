@@ -187,7 +187,7 @@
         titleText.spellcheck = false;
 	titleText.dataset.placeholder = "Add a heading…";
         titleText.textContent = block.title || "";
-        titleText.addEventListener("input", () => { block.title = titleText.textContent.trim() || "Heading"; });
+        titleText.addEventListener("input", () => { block.title = titleText.textContent.trim(); });
 
         // Make the delete button a separate, non-editable control
 	const delBlock = document.createElement("span");
@@ -392,39 +392,43 @@
   }
 
   function positionBlocks() {
-    const wrapRect = wrapper.getBoundingClientRect();
-    const W = 1200, H = 720;
+  const wrapRect = wrapper.getBoundingClientRect();
+  const W = 1200, H = 720;
 
-    const a = model.appearance || {};
-    const ribLen = Number(a.ribLength ?? 150);
+  const a = model.appearance || {};
+  const ribLen = Number(a.ribLength ?? 150);
+
+  blocksLayer.querySelectorAll(".block").forEach(el => {
+    const catId = el.dataset.catId;
+    const blockId = el.dataset.blockId;
+
+    const cat = model.categories.find(c => c.id === catId);
+    const block = cat?.blocks.find(b => b.id === blockId);
+    const bone = catBones.get(catId);
+    if (!cat || !block || !bone) return;
+
+    // ✅ blockW must be computed *here* (block is now defined)
     const blockW = block.w ? Number(block.w) : Number(a.blockWidth ?? 300);
 
-    blocksLayer.querySelectorAll(".block").forEach(el => {
-      const catId = el.dataset.catId;
-      const blockId = el.dataset.blockId;
-      const cat = model.categories.find(c => c.id === catId);
-      const block = cat?.blocks.find(b => b.id === blockId);
-      const bone = catBones.get(catId);
-      if (!cat || !block || !bone) return;
+    const t = clamp(Number(block.t ?? 0.3), 0.08, 0.92);
+    const p = pointOnBone(bone, t);
 
-      const t = clamp(Number(block.t ?? 0.3), 0.08, 0.92);
-      const p = pointOnBone(bone, t);
+    const xPx = (p.x / W) * wrapRect.width;
+    const yPx = (p.y / H) * wrapRect.height;
 
-      const xPx = (p.x / W) * wrapRect.width;
-      const yPx = (p.y / H) * wrapRect.height;
+    // block sits to the left of the rib start
+    let left = xPx - ribLen - blockW - 12;
+    left = clamp(left, 8, wrapRect.width - 8 - Math.min(blockW, wrapRect.width - 16));
 
-      // block sits to the left of the rib start
-      let left = xPx - ribLen - blockW - 12;
-      left = clamp(left, 8, wrapRect.width - 8 - Math.min(blockW, wrapRect.width - 16));
+    // align so title is above rib
+    let top = yPx - 30;
+    top = clamp(top, 8, wrapRect.height - 120);
 
-      // align so title is above rib
-      let top = yPx - 30;
-      top = clamp(top, 8, wrapRect.height - 120);
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  });
+}
 
-      el.style.left = `${left}px`;
-      el.style.top = `${top}px`;
-    });
-  }
 
   // ---------------- Dragging along the bone ----------------
   function startDrag(catId, blockId, pointerId, startEvent) {

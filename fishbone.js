@@ -93,11 +93,14 @@
     effectBox.style.marginTop = dy + "px";
 
     // effect size
-    const w = clamp(Number(model.effectSize?.w ?? 180), 120, 800);
-    const h = clamp(Number(model.effectSize?.h ?? 110), 70, 700);
-    effectTextEl.style.width = w + "px";
-    effectTextEl.style.height = h + "px";
-  }
+    const arrowW = Number(model.appearance?.arrowWidth ?? 140);
+   let w = Number(model.effectSize?.w);
+   let h = Number(model.effectSize?.h);
+   if (!w || w < 120) w = Math.max(120, arrowW - 40);
+   if (!h || h < 70) h = 110;
+   effectTextEl.style.width = clamp(Math.round(w), 120, 800) + "px";
+   effectTextEl.style.height = clamp(Math.round(h), 70, 700) + "px";
+   }
 
   // ---------------- Render ----------------
   function renderAll() {
@@ -213,31 +216,39 @@
         ul.className = "bullets";
 
         (block.bullets || []).forEach((txt, i) => {
-          const li = document.createElement("li");
-          li.classList.add("editable");
-	  li.contentEditable = "true";
-	  li.dataset.placeholder = "Add a bullet…";
-          li.spellcheck = false;
-          li.textContent = txt || "";
+	  const li = document.createElement("li");
+	  li.style.position = "relative";
+	
+	  // ✅ editable bullet text is a child span (so <li> stays non-editable)
+	  const bulletText = document.createElement("span");
+	  bulletText.className = "editable bulletText";
+	  bulletText.contentEditable = "true";
+	  bulletText.spellcheck = false;
+	  bulletText.dataset.placeholder = "Add a bullet…";
+	  bulletText.textContent = (txt || "");
 
-          li.addEventListener("input", () => {
-            block.bullets[i] = li.textContent.trim();
-          });
+	  bulletText.addEventListener("input", () => {
+	    block.bullets[i] = bulletText.textContent.trim();
+	  });
 
-          const del = document.createElement("span");
-          del.className = "del";
-          del.textContent = "✕";
-          del.title = "Delete bullet";
-          del.addEventListener("click", (e) => {
-            e.stopPropagation();
-            block.bullets.splice(i, 1);
-            if (block.bullets.length === 0) block.bullets.push("");
-            renderAll();
-          });
+	  // ✅ delete button is separate + non-editable (like header X)
+	  const del = document.createElement("span");
+	  del.className = "delBtn bulletDel";
+	  del.textContent = "✕";
+	  del.title = "Delete bullet";
+	  del.setAttribute("contenteditable", "false");
+	  del.addEventListener("click", (e) => {
+	    e.stopPropagation();
+	    block.bullets.splice(i, 1);
+	    if (block.bullets.length === 0) block.bullets.push("");
+	    renderAll();
+	  });
 
-          li.appendChild(del);
-          ul.appendChild(li);
-        });
+	  li.appendChild(bulletText);
+	  li.appendChild(del);
+	  ul.appendChild(li);
+	});
+
 
         blockEl.appendChild(titleRow);
         blockEl.appendChild(ul);

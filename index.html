@@ -198,6 +198,18 @@
 	.export-clean .delBtn{ display:none !important; 
 	}
 
+	.bulletDel{
+	  position:absolute;
+	  right:6px;
+	  top:0px;
+	  opacity:0.0;
+	}
+	li:hover .bulletDel{ opacity:0.95; }
+
+	/* Make sure the bullet text doesn't run under the X */
+	.bulletText{ padding-right:18px; display:inline-block; min-width:20px; }
+
+
 
     .bullets{
       margin:0;
@@ -302,6 +314,10 @@
       min-height: 70px;
       border: 1px solid rgba(255,255,255,0.0);
       border-radius: 6px;
+      text-align:left;
+      display:flex;
+      align-items:center;      
+      justify-content:flex-start;
     }
     #effectText:focus{
       border-color: rgba(255,255,255,0.55);
@@ -497,7 +513,7 @@
 
         <div class="field">
           <label for="labelWidth">Category label width</label>
-          <input type="range" id="labelWidth" min="160" max="340" value="200">
+          <input type="range" id="labelWidth" min="160" max="500" value="200">
         </div>
 
         <div class="field">
@@ -512,13 +528,13 @@
 
         <div class="field">
           <label for="boneSlant">Category bone slant</label>
-          <input type="range" id="boneSlant" min="0" max="240" value="120">
+          <input type="range" id="boneSlant" min="0" max="100" value="50">
         </div>
       </div>
     </div>
 
     <div id="effectBox">
-      <div id="effectDrag" title="Drag arrow text">↕</div>
+      <div id="effectDrag" title="Drag arrow text"></div>
       <div id="effectText" contenteditable="true" spellcheck="false"></div>
     </div>
   </div>

@@ -48,7 +48,7 @@
         boneColor: "#c00000",
         boneThickness: 10,
         fontSize: 12,
-        arrowWidth: 180,
+        arrowWidth: 140,
         labelWidth: 200,
         ribLength: 150,
         blockWidth: 300,
@@ -158,11 +158,12 @@
         handle.className = "dragHandle";
         handle.textContent = "⠿";
         handle.title = "Drag along the category bone";
-        handle.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          select(cat.id, block.id);
-          startDrag(cat.id, block.id);
+        handle.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handle.setPointerCapture(e.pointerId);
+        select(cat.id, block.id);
+        startDrag(cat.id, block.id, e.pointerId, e);
         });
 
         const titleText = document.createElement("div");
@@ -288,8 +289,8 @@
     const topCats = catsBySide("top");
     const botCats = catsBySide("bottom");
 
-    const topXs = spineAnchors(topCats.length, spineStart + 140, spineEnd - 120);
-    const botXs = spineAnchors(botCats.length, spineStart + 140, spineEnd - 120);
+    const topXs = spineAnchors(topCats.length, spineStart + 140, spineEnd - 30);
+    const botXs = spineAnchors(botCats.length, spineStart + 140, spineEnd - 30);
 
     const yTop = 70;
     const yBot = H - 70;
@@ -405,11 +406,38 @@
   }
 
   // ---------------- Dragging along the bone ----------------
-  function startDrag(catId, blockId) {
-    drag = { catId, blockId };
-    document.addEventListener("mousemove", onDragMove);
-    document.addEventListener("mouseup", onDragEnd, { once: true });
-  }
+  function startDrag(catId, blockId, pointerId, startEvent) {
+  const cat = model.categories.find(c => c.id === catId);
+  const block = cat?.blocks.find(b => b.id === blockId);
+  const bone = catBones.get(catId);
+  if (!cat || !block || !bone) return;
+
+  // pointer -> svg coords
+  const wrapRect = wrapper.getBoundingClientRect();
+  const W = 1200, H = 720;
+  const px = startEvent.clientX - wrapRect.left;
+  const py = startEvent.clientY - wrapRect.top;
+  const x = (px / wrapRect.width) * W;
+  const y = (py / wrapRect.height) * H;
+
+  // projected t at grab moment
+  const grabT = projectT({x,y}, {x:bone.xSpine,y:bone.ySpine}, {x:bone.xEdge,y:bone.yEdge});
+  const currentT = clamp(Number(block.t ?? 0.3), 0.08, 0.92);
+
+  drag = {
+    catId,
+    blockId,
+    pointerId,
+    // offset keeps the grabbed point aligned with the block so it doesn't jump
+    tOffset: currentT - grabT
+  };
+
+  document.addEventListener("pointermove", onDragMove);
+  document.addEventListener("pointerup", onDragEnd, { once: true });
+  document.addEventListener("pointercancel", onDragEnd, { once: true });
+}
+
+
 
   function onDragMove(e) {
     if (!drag) return;
@@ -429,7 +457,8 @@
 
     // project point onto bone segment to find t
     const t = projectT({x,y}, {x:bone.xSpine,y:bone.ySpine}, {x:bone.xEdge,y:bone.yEdge});
-    block.t = clamp(t, 0.08, 0.92);
+    block.t = clamp(t + (drag.tOffset || 0), 0.08, 0.92);
+
 
     drawRibs();
     positionBlocks();
@@ -437,9 +466,10 @@
   }
 
   function onDragEnd() {
-    document.removeEventListener("mousemove", onDragMove);
-    drag = null;
-  }
+  document.removeEventListener("pointermove", onDragMove);
+  drag = null;
+}
+
 
   function projectT(p, a, b){
     const abx = b.x - a.x, aby = b.y - a.y;
@@ -549,7 +579,7 @@
     $("boneColor").value = a.boneColor || "#c00000";
     $("boneThickness").value = String(a.boneThickness ?? 10);
     $("fontSize").value = String(a.fontSize ?? 12);
-    $("arrowWidth").value = String(a.arrowWidth ?? 180);
+    $("arrowWidth").value = String(a.arrowWidth ?? 140);
     $("labelWidth").value = String(a.labelWidth ?? 200);
     $("ribLength").value = String(a.ribLength ?? 150);
     $("blockWidth").value = String(a.blockWidth ?? 300);

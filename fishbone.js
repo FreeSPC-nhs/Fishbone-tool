@@ -32,6 +32,7 @@
 
   // catId -> { xSpine,ySpine,xEdge,yEdge, side }
   const catBones = new Map();
+  const ribYByBlockId = new Map();
 
   // drag state
   let drag = null; // { catId, blockId }
@@ -116,9 +117,9 @@
 
     requestAnimationFrame(() => {
       drawStaticBones();
+      positionBlocks();
       drawRibs();
       positionLabels();
-      positionBlocks();
       updateFloatingTools();
     });
   }
@@ -207,6 +208,14 @@
 	  const ok = window.confirm("Delete this heading and all its bullets?");
 	  if (!ok) return;
 	  cat.blocks = cat.blocks.filter(b => b.id !== block.id);
+	if (cat.blocks.length === 0) {
+	  cat.blocks.push({
+	    id: uid(),
+	    title: "",
+	    bullets: [""],
+	    t: 0.3   // sensible default position on the bone
+	  });
+	}
 	  if (selected.blockId === block.id) selected = { catId: null, blockId: null };
 	  renderAll();
 	});
@@ -354,29 +363,62 @@
 
   // ribs from each block's bone point, extending left
   function drawRibs() {
-    ensureGroups();
-    clearGroup(gRibs);
+  ensureGroups();
+  clearGroup(gRibs);
 
-    const a = model.appearance || {};
-    const stroke = a.boneColor || "#c00000";
-    const ribThickness = Math.max(2, Number(a.boneThickness ?? 10) - 4);
-    const ribLen = Number(a.ribLength ?? 150);
-    const gapToBone = 40; // ✅ must match positionBlocks()
+  const a = model.appearance || {};
+  const stroke = a.boneColor || "#c00000";
+  const ribThickness = Math.max(2, Number(a.boneThickness ?? 10) - 4);
+  const ribLen = Number(a.ribLength ?? 150);
 
-    model.categories.forEach(cat => {
-      const bone = catBones.get(cat.id);
-      if (!bone) return;
+  const wrapRect = wrapper.getBoundingClientRect();
+  const W = 1200, H = 720;
 
-      cat.blocks.forEach(block => {
-        const t = clamp(Number(block.t ?? 0.3), 0.08, 0.92);
-        const p = pointOnBone(bone, t);
+  // Build a quick lookup for DOM blocks, so we can place ribs above/below them
+  const blockEls = new Map(); // blockId -> element
+  blocksLayer.querySelectorAll(".block").forEach(el => {
+    blockEls.set(el.dataset.blockId, el);
+  });
 
-        const x2 = p.x - 6;
-        const x1 = x2 - gapToBone;
-        addLine(gRibs, x1, p.y, x2, p.y, stroke, ribThickness);
-      });
+  model.categories.forEach(cat => {
+    const bone = catBones.get(cat.id);
+    if (!bone) return;
+
+    cat.blocks.forEach(block => {
+      const el = blockEls.get(block.id);
+      if (!el) return;
+
+      // Compute a rib Y based on the block's on-screen position:
+      //  - top categories: rib just ABOVE the block
+      //  - bottom categories: rib just BELOW the block
+      const r = el.getBoundingClientRect();
+
+      const ribYPx = (cat.side === "top")
+        ? (r.top - wrapRect.top + 10)          // slightly above title line
+        : (r.bottom - wrapRect.top - 10);      // slightly below the block
+
+      const ribYSvg = (ribYPx / wrapRect.height) * H;
+
+      // Find the x on the diagonal bone at this y (via t-at-y interpolation)
+      const denom = (bone.yEdge - bone.ySpine);
+      if (Math.abs(denom) < 1e-6) return;
+
+      const tAtY = (ribYSvg - bone.ySpine) / denom;
+
+      // Keep ribs within the bone segment (prevents weird off-bone lines)
+      const tClamped = clamp(tAtY, 0.02, 0.98);
+
+      const xOnBone = bone.xSpine + tClamped * (bone.xEdge - bone.xSpine);
+
+      // Rib goes left from the bone by ribLen
+      const x2 = xOnBone - 6;
+      const x1 = x2 - ribLen;
+
+      addLine(gRibs, x1, ribYSvg, x2, ribYSvg, stroke, ribThickness);
     });
-  }
+  });
+}
+
 
   function pointOnBone(bone, t){
     return {
@@ -437,12 +479,30 @@
     let left = xPx - gapToBone - blockW;
     left = clamp(left, 8, wrapRect.width - 8 - Math.min(blockW, wrapRect.width - 16));
 
-    // align so title is above rib
-    let top = yPx - 30;
-    top = clamp(top, 8, wrapRect.height - 120);
+    // Convert bone point to wrapper px
+   const ribYPx = yPx; // rib line will be drawn at this y (in wrapper px)
+
+   // Place block below rib (top categories) or above rib (bottom categories)
+   const blockH = el.offsetHeight || 90;
+   const verticalGap = 8;
+
+   let top;
+   if (cat.side === "top") {
+     top = ribYPx + verticalGap;                 // block UNDER the rib
+   } else {
+     top = ribYPx - blockH - verticalGap;        // block ABOVE the rib
+   }
+
+   // clamp
+   top = clamp(top, 8, wrapRect.height - blockH - 8);
 
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
+
+   // Store ribY in SVG units so drawRibs can use it precisely
+   const ribYSvg = (ribYPx / wrapRect.height) * H;
+   ribYByBlockId.set(block.id, ribYSvg);
+
   });
 }
 

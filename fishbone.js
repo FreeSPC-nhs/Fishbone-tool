@@ -682,7 +682,8 @@
     $("arrowWidth").value = String(a.arrowWidth ?? 140);
     $("labelWidth").value = String(a.labelWidth ?? 200);
     $("ribLength").value = String(a.ribLength ?? 150);
-    $("blockWidth").value = String(a.blockWidth ?? 300);
+    const bw = $("blockWidth");
+    if (bw) bw.value = String(a.blockWidth ?? 300);
     $("boneSlant").value = String(a.boneSlant ?? 200);
   }
 
@@ -693,7 +694,8 @@
     $("arrowWidth").addEventListener("input", (e) => { model.appearance.arrowWidth = Number(e.target.value); renderAll(); });
     $("labelWidth").addEventListener("input", (e) => { model.appearance.labelWidth = Number(e.target.value); renderAll(); });
     $("ribLength").addEventListener("input", (e) => { model.appearance.ribLength = Number(e.target.value); renderAll(); });
-    $("blockWidth").addEventListener("input", (e) => { model.appearance.blockWidth = Number(e.target.value); renderAll(); });
+    const bw = $("blockWidth");
+   if (bw) bw.addEventListener("input", (e) => { model.appearance.blockWidth = Number(e.target.value); renderAll(); });
     $("boneSlant").addEventListener("input", (e) => { model.appearance.boneSlant = Number(e.target.value); renderAll(); });
   }
 

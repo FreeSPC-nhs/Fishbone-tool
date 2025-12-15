@@ -326,10 +326,7 @@
       "Z"
     ].join(" "), stroke);
 
-    // tail
-    addLine(gStatic, spineStart - 40, midY, spineStart, midY, stroke, Math.max(4, thickness - 4));
-
-    // category bones: anchored at evenly spaced points along the spine band
+        // category bones: anchored at evenly spaced points along the spine band
     const topCats = catsBySide("top");
     const botCats = catsBySide("bottom");
 

@@ -52,7 +52,7 @@
         labelWidth: 200,
         ribLength: 150,
         blockWidth: 300,
-        boneSlant: 200
+        boneSlant: 120
       },
       categories: [
         // 6 classic categories
@@ -256,14 +256,14 @@
     const stroke = a.boneColor || "#c00000";
     const thickness = Number(a.boneThickness ?? 10);
     const arrowW = Number(a.arrowWidth ?? 180);
-    const slant = Number(a.boneSlant ?? 200);
+    const slant = 120 + Number(a.boneSlant ?? 120);
 
     // More left padding so the left bones don’t clash with the edge
     const marginL = 160;
 
     const arrowX = W - arrowW;
     const spineStart = marginL;
-    const spineEnd = arrowX - 24;
+    const spineEnd = arrowX;
 
     // spine
     addLine(gStatic, spineStart, midY, spineEnd, midY, stroke, thickness);
@@ -273,13 +273,13 @@
     const arrowBot = midY + 95;
     const arrowTipX = W - 18;
     const arrowBodyX = arrowX;
-    addPath(gStatic, [
+    addFilledPath(gStatic, [
       `M ${arrowBodyX} ${arrowTop}`,
       `L ${arrowTipX} ${midY}`,
       `L ${arrowBodyX} ${arrowBot}`,
       `L ${arrowBodyX} ${arrowTop}`,
       "Z"
-    ].join(" "), stroke, cssVar("--bone-dark"));
+    ].join(" "), stroke);
 
     // tail
     addLine(gStatic, spineStart - 40, midY, spineStart, midY, stroke, Math.max(4, thickness - 4));
@@ -361,7 +361,8 @@
       const yPx = (bone.yEdge / H) * wrapRect.height;
 
       // attach just off the bone end
-      const yOffset = (bone.side === "top") ? 6 : -44;
+      const labelH = el.getBoundingClientRect().height || 40;
+      const yOffset = (bone.side === "top") ? (-labelH + 6) : (-6);
 
       el.style.left = `${xPx}px`;
       el.style.top = `${yPx + yOffset}px`;
@@ -712,6 +713,14 @@
     el.setAttribute("stroke-linecap", "butt");
     group.appendChild(el);
   }
+
+function addFilledPath(group, d, fill) {
+  const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p.setAttribute("d", d);
+  p.setAttribute("fill", fill);
+  group.appendChild(p);
+}
+
 
   function addPath(group, d, fill, stroke) {
     const p = document.createElementNS("http://www.w3.org/2000/svg", "path");

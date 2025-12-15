@@ -825,12 +825,20 @@
     const imgData = canvas.toDataURL("image/png");
 
     // html2pdf bundle exposes jsPDF on window.jspdf
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({
-      unit: "pt",
-      format: [canvas.width, canvas.height],
-      orientation: canvas.width >= canvas.height ? "landscape" : "portrait"
-    });
+    const jsPDF =
+  (window.jspdf && window.jspdf.jsPDF) ||
+  (window.jspdf && window.jspdf.default && window.jspdf.default.jsPDF) ||
+  window.jsPDF;
+
+if (!jsPDF) {
+  throw new Error("jsPDF not found on window. Add jspdf.umd.min.js (see instructions).");
+}
+
+const pdf = new jsPDF({
+  unit: "pt",
+  format: [canvas.width, canvas.height],
+  orientation: canvas.width >= canvas.height ? "landscape" : "portrait"
+});
 
     pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
     pdf.save("fishbone-diagram.pdf");

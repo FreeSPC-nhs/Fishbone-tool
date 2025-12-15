@@ -46,7 +46,7 @@
       effectPos: { dx: 0, dy: 0 },
       effectSize: { w: 180, h: 110 },
       appearance: {
-        boneColor: "#c00000",
+        boneColor: "#8f0000",
         boneThickness: 10,
         fontSize: 12,
         arrowWidth: 140,
@@ -102,9 +102,7 @@
    if (!h || h < 70) h = 110;
    effectTextEl.style.width = clamp(Math.round(w), 120, 800) + "px";
    effectTextEl.style.height = clamp(Math.round(h), 70, 700) + "px";
-   effectTextEl.style.right = inset + "px";
-   effectTextEl.style.top = "50%";
-   effectTextEl.style.transform = "translateY(-50%)";
+   
    }
 
   // ---------------- Render ----------------

@@ -155,9 +155,10 @@
 	if (block.w) blockEl.style.width = block.w + "px";
 
         blockEl.addEventListener("mousedown", (e) => {
-          if (e.target?.classList?.contains("dragHandle")) return;
-          select(cat.id, block.id);
-        });
+	  if (e.target?.classList?.contains("dragHandle")) return;
+	  e.stopPropagation(); // ← prevents background deselect
+	  select(cat.id, block.id);
+	});
 
 	// Persist per-block width when user resizes
 	if ("ResizeObserver" in window) {
@@ -850,6 +851,14 @@
     group.appendChild(el);
   }
 
+function clearSelection() {
+  selected = { catId: null, blockId: null };
+  refreshSelectionUI();
+  updateFloatingTools();
+}
+
+
+
 function addFilledPath(group, d, fill) {
   const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
   p.setAttribute("d", d);
@@ -878,6 +887,16 @@ function addFilledPath(group, d, fill) {
 
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
   function cssEscape(s) { return String(s).replace(/"/g, '\\"'); }
+
+wrapper.addEventListener("mousedown", (e) => {
+  // Ignore clicks that start inside a block or category label
+  if (e.target.closest(".block")) return;
+  if (e.target.closest(".catLabel")) return;
+
+  clearSelection();
+});
+
+
 
   // ---------------- Init ----------------
   syncControlsFromModel();

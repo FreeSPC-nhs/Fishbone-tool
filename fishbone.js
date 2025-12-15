@@ -67,7 +67,7 @@
   }
 
   function mkBlock(t) {
-    return { id: uid(), title: "Heading", bullets: ["Add bullet point…"], t: clamp(t ?? 0.3, 0.08, 0.92) };
+    return { id: uid(), title: "", bullets: [""], t: clamp(t ?? 0.3, 0.08, 0.92) };
   }
 
   function uid() {
@@ -146,10 +146,25 @@
         blockEl.dataset.catId = cat.id;
         blockEl.dataset.blockId = block.id;
 
+	if (block.w) blockEl.style.width = block.w + "px";
+
         blockEl.addEventListener("mousedown", (e) => {
           if (e.target?.classList?.contains("dragHandle")) return;
           select(cat.id, block.id);
         });
+
+	// Persist per-block width when user resizes
+	if ("ResizeObserver" in window) {
+	  const ro = new ResizeObserver(() => {
+	    const r = blockEl.getBoundingClientRect();
+	    block.w = clamp(Math.round(r.width), 180, 520);
+	    // Reposition so rib/placement stays consistent after resize
+	    positionBlocks();
+	    updateFloatingTools();
+	  });
+	  ro.observe(blockEl);
+	}
+
 
         const titleRow = document.createElement("div");
         titleRow.className = "blockTitle";
@@ -167,37 +182,43 @@
         });
 
         const titleText = document.createElement("div");
-        titleText.className = "titleText";
+        titleText.className = "titleText editable";
         titleText.contentEditable = "true";
         titleText.spellcheck = false;
+	titleText.dataset.placeholder = "Add a heading…";
         titleText.textContent = block.title || "";
         titleText.addEventListener("input", () => { block.title = titleText.textContent.trim() || "Heading"; });
 
-        const delBlock = document.createElement("span");
-        delBlock.className = "del";
-        delBlock.textContent = "✕";
-        delBlock.title = "Delete heading";
-        delBlock.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const ok = window.confirm("Delete this heading and all its bullets?");
-          if (!ok) return;
-          cat.blocks = cat.blocks.filter(b => b.id !== block.id);
-          if (selected.blockId === block.id) selected = { catId: null, blockId: null };
-          renderAll();
-        });
+        // Make the delete button a separate, non-editable control
+	const delBlock = document.createElement("span");
+	delBlock.className = "delBtn";
+	delBlock.textContent = "✕";
+	delBlock.title = "Delete heading";
+	delBlock.setAttribute("contenteditable", "false");
+	delBlock.addEventListener("click", (e) => {
+	  e.stopPropagation();
+	  const ok = window.confirm("Delete this heading and all its bullets?");
+	  if (!ok) return;
+	  cat.blocks = cat.blocks.filter(b => b.id !== block.id);
+	  if (selected.blockId === block.id) selected = { catId: null, blockId: null };
+	  renderAll();
+	});
+	
+	titleRow.appendChild(handle);
+	titleRow.appendChild(titleText);
+	titleRow.appendChild(delBlock);
 
-        titleText.appendChild(delBlock);
-        titleRow.appendChild(handle);
-        titleRow.appendChild(titleText);
 
         const ul = document.createElement("ul");
         ul.className = "bullets";
 
         (block.bullets || []).forEach((txt, i) => {
           const li = document.createElement("li");
-          li.contentEditable = "true";
+          li.classList.add("editable");
+	  li.contentEditable = "true";
+	  li.dataset.placeholder = "Add a bullet…";
           li.spellcheck = false;
-          li.textContent = txt;
+          li.textContent = txt || "";
 
           li.addEventListener("input", () => {
             block.bullets[i] = li.textContent.trim();
@@ -210,7 +231,7 @@
           del.addEventListener("click", (e) => {
             e.stopPropagation();
             block.bullets.splice(i, 1);
-            if (block.bullets.length === 0) block.bullets.push("Add bullet point…");
+            if (block.bullets.length === 0) block.bullets.push("");
             renderAll();
           });
 
@@ -376,7 +397,7 @@
 
     const a = model.appearance || {};
     const ribLen = Number(a.ribLength ?? 150);
-    const blockW = Number(a.blockWidth ?? 300);
+    const blockW = block.w ? Number(block.w) : Number(a.blockWidth ?? 300);
 
     blocksLayer.querySelectorAll(".block").forEach(el => {
       const catId = el.dataset.catId;
@@ -646,8 +667,8 @@
             label: String(sc.label || dc.label),
             blocks: Array.isArray(sc.blocks) ? sc.blocks.map(sb => ({
               id: String(sb.id || uid()),
-              title: String(sb.title || "Heading"),
-              bullets: Array.isArray(sb.bullets) ? sb.bullets.map(x => String(x)) : ["Add bullet point…"],
+              title: String(sb.title || ""),
+              bullets: Array.isArray(sb.bullets) ? sb.bullets.map(x => String(x)) : [""],
               t: clamp(Number(sb.t ?? 0.3), 0.08, 0.92)
             })) : [mkBlock(0.3)]
           };

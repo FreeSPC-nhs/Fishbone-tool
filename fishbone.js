@@ -52,7 +52,7 @@
         labelWidth: 200,
         ribLength: 150,
         blockWidth: 300,
-        boneSlant: 120
+        boneSlant: 50
       },
       categories: [
         // 6 classic categories
@@ -84,7 +84,7 @@
     document.documentElement.style.setProperty("--label-width", (a.labelWidth ?? 200) + "px");
     document.documentElement.style.setProperty("--rib-length", (a.ribLength ?? 150) + "px");
     document.documentElement.style.setProperty("--block-width", (a.blockWidth ?? 300) + "px");
-    document.documentElement.style.setProperty("--bone-slant", (a.boneSlant ?? 200) + "px");
+    document.documentElement.style.setProperty("--bone-slant", (a.boneSlant ?? 50) + "px");
 
     // effect position
     const dx = model.effectPos?.dx ?? 0;
@@ -94,12 +94,16 @@
 
     // effect size
     const arrowW = Number(model.appearance?.arrowWidth ?? 140);
+    const inset = Math.max(16, arrowW - effectTextEl.offsetWidth - 16);
    let w = Number(model.effectSize?.w);
    let h = Number(model.effectSize?.h);
    if (!w || w < 120) w = Math.max(120, arrowW - 40);
    if (!h || h < 70) h = 110;
    effectTextEl.style.width = clamp(Math.round(w), 120, 800) + "px";
    effectTextEl.style.height = clamp(Math.round(h), 70, 700) + "px";
+   effectTextEl.style.right = inset + "px";
+   effectTextEl.style.top = "50%";
+   effectTextEl.style.transform = "translateY(-50%)";
    }
 
   // ---------------- Render ----------------
@@ -357,6 +361,7 @@
     const stroke = a.boneColor || "#c00000";
     const ribThickness = Math.max(2, Number(a.boneThickness ?? 10) - 4);
     const ribLen = Number(a.ribLength ?? 150);
+    const gapToBone = 40; // ✅ must match positionBlocks()
 
     model.categories.forEach(cat => {
       const bone = catBones.get(cat.id);
@@ -367,7 +372,7 @@
         const p = pointOnBone(bone, t);
 
         const x2 = p.x - 6;
-        const x1 = x2 - ribLen;
+        const x1 = x2 - gapToBone;
         addLine(gRibs, x1, p.y, x2, p.y, stroke, ribThickness);
       });
     });
@@ -428,7 +433,8 @@
     const yPx = (p.y / H) * wrapRect.height;
 
     // block sits to the left of the rib start
-    let left = xPx - ribLen - blockW - 12;
+    const gapToBone = 30; // ✅ 30–50px (tweak as desired)
+    let left = xPx - gapToBone - blockW;
     left = clamp(left, 8, wrapRect.width - 8 - Math.min(blockW, wrapRect.width - 16));
 
     // align so title is above rib

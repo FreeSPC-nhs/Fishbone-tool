@@ -629,7 +629,7 @@
     if (!cat || !block) return;
 
     if (!Array.isArray(block.bullets)) block.bullets = [];
-    block.bullets.push("New bullet…");
+    block.bullets.push("");
     renderAll();
   });
 
@@ -889,9 +889,10 @@ function addFilledPath(group, d, fill) {
   function cssEscape(s) { return String(s).replace(/"/g, '\\"'); }
 
 wrapper.addEventListener("mousedown", (e) => {
-  // Ignore clicks that start inside a block or category label
+  // Ignore interactive elements
   if (e.target.closest(".block")) return;
   if (e.target.closest(".catLabel")) return;
+  if (e.target.closest("#floatingTools")) return;
 
   clearSelection();
 });

@@ -411,7 +411,7 @@
       const xOnBone = bone.xSpine + tClamped * (bone.xEdge - bone.xSpine);
 
       // Rib goes left from the bone by ribLen
-      const x2 = xOnBone - 6;
+      const x2 = xOnBone;
       const x1 = x2 - ribLen;
 
       addLine(gRibs, x1, ribYSvg, x2, ribYSvg, stroke, ribThickness);

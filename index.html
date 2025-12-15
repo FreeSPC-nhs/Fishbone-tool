@@ -280,10 +280,16 @@
       z-index:5;
       pointer-events:auto;
     }
+
+	#effectTextWrap{
+	  position:relative;
+	  display:inline-block;
+	}
+
     #effectDrag{
       position:absolute;
-      top:-10px;
-      left:-10px;
+      top:8px;
+      left:-12px;
       width:20px;
       height:20px;
       border-radius:999px;
@@ -523,11 +529,6 @@
         </div>
 
         <div class="field">
-          <label for="blockWidth">Heading block width</label>
-          <input type="range" id="blockWidth" min="180" max="520" value="300">
-        </div>
-
-        <div class="field">
           <label for="boneSlant">Category bone slant</label>
           <input type="range" id="boneSlant" min="0" max="100" value="50">
         </div>
@@ -535,10 +536,12 @@
     </div>
 
     <div id="effectBox">
-      <div id="effectDrag" title="Drag arrow text"></div>
-      <div id="effectText" contenteditable="true" spellcheck="false"></div>
-    </div>
+  <div id="effectTextWrap">
+    <div id="effectDrag" title="Drag arrow text">⠿</div>
+    <div id="effectText" contenteditable="true" spellcheck="false"></div>
   </div>
+</div>
+
 
   <div class="note">
     Tip: Select a heading; the +Heading/+Bullet buttons will appear next to it.

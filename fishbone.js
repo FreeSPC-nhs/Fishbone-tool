@@ -803,25 +803,46 @@
 });
 
   $("btnExportPDF").addEventListener("click", async () => {
-    wrapper.classList.add("export-clean");
-    prepareEffectBoxForExport();
-    try {
-      const opt = {
-        margin: 0,
-        filename: "fishbone-diagram.pdf",
-        image: { type: "jpeg", quality: 0.95 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: "pt", format: [wPt, hPt], wPt > hPt ? "landscape" : "portrait" }
-      };
-      await html2pdf().from(wrapper).set(opt).save();
-    } catch (e) {
-      console.error(e);
-      alert("Could not export PDF.");
-    } finally {
+  wrapper.classList.add("export-clean");
+  prepareEffectBoxForExport(); // keep arrow text aligned like the screen
+
+  try {
+    // Use offset sizes (more reliable than getBoundingClientRect for export)
+    const w = wrapper.offsetWidth;
+    const h = wrapper.offsetHeight;
+
+    const canvas = await html2canvas(wrapper, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      width: w,
+      height: h,
+      windowWidth: w,
+      windowHeight: h,
+      scrollX: 0,
+      scrollY: 0
+    });
+
+    const imgData = canvas.toDataURL("image/png");
+
+    // html2pdf bundle exposes jsPDF on window.jspdf
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({
+      unit: "pt",
+      format: [canvas.width, canvas.height],
+      orientation: canvas.width >= canvas.height ? "landscape" : "portrait"
+    });
+
+    pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+    pdf.save("fishbone-diagram.pdf");
+  } catch (e) {
+    console.error(e);
+    alert("Could not export PDF.");
+  } finally {
     restoreEffectBoxAfterExport();
-      wrapper.classList.remove("export-clean");
-    }
-  });
+    wrapper.classList.remove("export-clean");
+  }
+});
+
 
   $("btnReset").addEventListener("click", () => {
     const ok = window.confirm("Reset to a fresh fishbone model?");

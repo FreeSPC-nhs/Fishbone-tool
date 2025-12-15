@@ -785,38 +785,43 @@
   });
 
   $("btnExportPNG").addEventListener("click", async () => {
-    wrapper.classList.add("export-clean");
-    try {
-      const canvas = await html2canvas(wrapper, { scale: 2 });
-      const a = document.createElement("a");
-      a.download = "fishbone-diagram.png";
-      a.href = canvas.toDataURL("image/png");
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch (e) {
-      console.error(e);
-      alert("Could not export PNG.");
-    } finally {
-      wrapper.classList.remove("export-clean");
-    }
-  });
+  wrapper.classList.add("export-clean");
+  prepareEffectBoxForExport();
+
+  try {
+    const canvas = await html2canvas(wrapper, { scale: 2 });
+    const a = document.createElement("a");
+    a.download = "fishbone-diagram.png";
+    a.href = canvas.toDataURL("image/png");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (e) {
+    console.error(e);
+    alert("Could not export PNG.");
+  } finally {
+    restoreEffectBoxAfterExport();
+    wrapper.classList.remove("export-clean");
+  }
+});
 
   $("btnExportPDF").addEventListener("click", async () => {
     wrapper.classList.add("export-clean");
+    prepareEffectBoxForExport();
     try {
       const opt = {
-        margin: 8,
+        margin: 0,
         filename: "fishbone-diagram.pdf",
         image: { type: "jpeg", quality: 0.95 },
         html2canvas: { scale: 2 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "landscape" }
+        jsPDF: { unit: "pt", format: [wPt, hPt], wPt > hPt ? "landscape" : "portrait" }
       };
       await html2pdf().from(wrapper).set(opt).save();
     } catch (e) {
       console.error(e);
       alert("Could not export PDF.");
     } finally {
+    restoreEffectBoxAfterExport();
       wrapper.classList.remove("export-clean");
     }
   });
@@ -897,6 +902,48 @@ wrapper.addEventListener("mousedown", (e) => {
   clearSelection();
 });
 
+let exportEffectRestore = null;
+
+function prepareEffectBoxForExport() {
+  const a = model.appearance || {};
+  const arrowW = Number(a.arrowWidth ?? 140);
+  const dx = model.effectPos?.dx ?? 0;
+  const dy = model.effectPos?.dy ?? 0;
+
+  const wrapRect = wrapper.getBoundingClientRect();
+
+  // Save inline styles so we can restore them after export
+  exportEffectRestore = {
+    left: effectBox.style.left,
+    top: effectBox.style.top,
+    transform: effectBox.style.transform,
+    marginLeft: effectBox.style.marginLeft,
+    marginTop: effectBox.style.marginTop
+  };
+
+  // Remove margin-based offsets and bake them into left/top pixels
+  effectBox.style.marginLeft = "0px";
+  effectBox.style.marginTop = "0px";
+
+  // Match the CSS anchor: (wrapperWidth - arrowWidth - 20)
+  const baseLeft = wrapRect.width - arrowW - 20;
+
+  effectBox.style.left = (baseLeft + dx) + "px";
+  effectBox.style.top = (wrapRect.height * 0.5 + dy) + "px";
+  effectBox.style.transform = "translateY(-50%)";
+}
+
+function restoreEffectBoxAfterExport() {
+  if (!exportEffectRestore) return;
+
+  effectBox.style.left = exportEffectRestore.left;
+  effectBox.style.top = exportEffectRestore.top;
+  effectBox.style.transform = exportEffectRestore.transform;
+  effectBox.style.marginLeft = exportEffectRestore.marginLeft;
+  effectBox.style.marginTop = exportEffectRestore.marginTop;
+
+  exportEffectRestore = null;
+}
 
 
   // ---------------- Init ----------------

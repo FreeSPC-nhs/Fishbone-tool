@@ -391,9 +391,13 @@
       //  - bottom categories: rib just BELOW the block
       const r = el.getBoundingClientRect();
 
-      const ribYPx = (cat.side === "top")
-        ? (r.top - wrapRect.top + 10)          // slightly above title line
-        : (r.bottom - wrapRect.top - 10);      // slightly below the block
+      const ribOffset = 8;
+      let ribYPx = (cat.side === "top")
+       ? (r.top - wrapRect.top - ribOffset)      // above the block
+       : (r.bottom - wrapRect.top + ribOffset);  // below the block
+
+      // keep within wrapper bounds (optional but helps near edges)
+      ribYPx = clamp(ribYPx, 0, wrapRect.height);
 
       const ribYSvg = (ribYPx / wrapRect.height) * H;
 
